@@ -1,0 +1,13 @@
+pandas==2.3.3
+autopep8==2.3.2
+radon==6.0.1
+bandit==1.9.2
+pylint==4.0.4
+complexipy==5.1.0
+scikit-learn==1.8.0
+openai==2.14.0
+seaborn==0.13.2
+statsmodels==0.14.0
+numba==0.62.0
+llvmlite==0.45.1
+shap==0.50.0

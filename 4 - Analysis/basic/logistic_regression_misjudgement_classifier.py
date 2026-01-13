@@ -14,6 +14,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve
 from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
@@ -204,7 +205,18 @@ def train_logistic_regression(X, y, feature_names):
         solver='liblinear'
     )
     
-    # Train the model
+    # Create pipeline for proper cross-validation (prevents data leakage)
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('classifier', LogisticRegression(
+            random_state=42, 
+            class_weight='balanced',
+            max_iter=1000,
+            solver='liblinear'
+        ))
+    ])
+    
+    # Train the model on scaled data
     print("Training Logistic Regression model...")
     lr.fit(X_train_scaled, y_train)
     
@@ -234,8 +246,8 @@ def train_logistic_regression(X, y, feature_names):
     print("\n=== Top 10 Most Important Features (by coefficient magnitude) ===")
     print(feature_importance.head(10)[['feature', 'coefficient', 'abs_coefficient']])
     
-    # Cross-validation scores
-    cv_scores = cross_val_score(lr, X_train_scaled, y_train, cv=5, scoring='roc_auc')
+    # Cross-validation scores using pipeline (prevents data leakage)
+    cv_scores = cross_val_score(pipeline, X_train, y_train, cv=5, scoring='roc_auc')
     print(f"\nCross-validation AUC scores: {cv_scores}")
     print(f"Mean CV AUC: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
     
