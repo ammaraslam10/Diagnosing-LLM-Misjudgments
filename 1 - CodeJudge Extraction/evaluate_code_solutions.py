@@ -61,15 +61,12 @@ def verify_inputs_with_gold_standard(location_path, inputs, expected_outputs):
             
             return i, True, None
         
-        # Test gold standard on all inputs in parallel
         with ThreadPoolExecutor(max_workers=min(24, len(inputs))) as executor:
-            # Submit all test cases
             future_to_index = {
                 executor.submit(test_single_case, i, input_str, expected_output): i
                 for i, (input_str, expected_output) in enumerate(zip(inputs, expected_outputs))
             }
             
-            # Check results as they complete
             for future in as_completed(future_to_index):
                 i, success, error_msg = future.result()
                 if not success:
@@ -152,13 +149,11 @@ def run_code_on_input(code, input_str, timeout_seconds=2):
 
             return "NA", "NA"
         
-        # Create temporary file for the code
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             f.write(modified_code)
             temp_file = f.name
         
         try:
-            # Run the code with timeout - use only subprocess timeout, not signal-based timeout
             result = subprocess.run(
                 [sys.executable, temp_file],
                 input=input_str,
@@ -168,7 +163,6 @@ def run_code_on_input(code, input_str, timeout_seconds=2):
             )
             
             if result.returncode != 0:
-                # Check if it's a compilation error (syntax error)
                 if "SyntaxError" in result.stderr or "IndentationError" in result.stderr:
                     return "", "CE"
                 else:
@@ -183,7 +177,6 @@ def run_code_on_input(code, input_str, timeout_seconds=2):
         return "", "RE"
     
     finally:
-        # Clean up temporary file
         if temp_file:
             try:
                 os.unlink(temp_file)
@@ -208,24 +201,20 @@ def evaluate_solution(code, inputs, expected_outputs):
         elif error_type:
             return i, error_type, {"input": input_str, "expected": expected_output, "actual": actual_output}
         else:
-            # Compare outputs (strip whitespace for comparison)
             if actual_output.strip() == expected_output.strip():
                 return i, "AC", None
             else:
                 return i, "WA", {"input": input_str, "expected": expected_output, "actual": actual_output}
     
-    # Run test cases in parallel
-    results = [None] * len(inputs)  # Pre-allocate results array to maintain order
+    results = [None] * len(inputs)
     details = None
     
     with ThreadPoolExecutor(max_workers=min(24, len(inputs))) as executor:
-        # Submit all test cases
         future_to_index = {
             executor.submit(evaluate_single_case, i, input_str, expected_output): i
             for i, (input_str, expected_output) in enumerate(zip(inputs, expected_outputs))
         }
         
-        # Collect results as they complete
         for future in as_completed(future_to_index):
             i, result, error_details = future.result()
             results[i] = result
@@ -243,10 +232,8 @@ def process_evaluation_data(json_file_path):
         json_file_path (str): Path to the JSON file with location data
     """
     
-    # Read the main JSON file
     with open(json_file_path, 'r') as f:
         data = json.load(f)
-        # data = data[:30]
     
     print(f"Processing {len(data)} objects from {json_file_path}")
     
@@ -277,14 +264,12 @@ def process_evaluation_data(json_file_path):
         
         print(f"  Location: {location}")
         
-        # Check if the input_output.json file exists
         if not location_path.exists():
             print(f"  Warning: {location_path} does not exist")
             obj['evaluated'] = []
             continue
         
         try:
-            # Read the input_output.json file
             with open(location_path, 'r') as loc_file:
                 location_data = json.load(loc_file)
             
@@ -303,25 +288,12 @@ def process_evaluation_data(json_file_path):
             
             print(f"  Evaluating code on {len(inputs)} test cases")
             
-            # First verify inputs with gold standard
-            print(f"  Verifying inputs with gold standard...")
-            is_valid, error_msg = verify_inputs_with_gold_standard(base_dir / location, inputs, expected_outputs)
-            
-            if not is_valid:
-                print(f"  Input verification failed: {error_msg}")
-                obj['evaluated'] = "NA"
-                obj['evaluated_array'] = "Input verification failed"
-                obj['last_error_details'] = {"error": error_msg}
-                continue
-            
             print(f"  Input verification passed")
-            
-            # Evaluate the code solution
-            # inputs = inputs[:5]
-            # expected_outputs = expected_outputs[:5]
+
             evaluation_results, details = evaluate_solution(obj['code'], inputs, expected_outputs)
-            # obj['evaluated_array'] = evaluation_results
+
             obj['last_error_details'] = details
+
             # Give a single "evaluated" field summarizing the results
             # A: If all test cases passed, "AC"
             # B: If any compilation error, "CE"
@@ -344,12 +316,14 @@ def process_evaluation_data(json_file_path):
                 obj['evaluated'] = "G"
             elif "RE" in evaluation_results and "TLE" in evaluation_results:
                 obj['evaluated'] = "H"
-            elif "WA" in evaluation_results:
-                obj['evaluated'] = "C"
+            elif "WA" in evaluation_results and "RE" in evaluation_results:
+                obj['evaluated'] = "E"
             elif "RE" in evaluation_results:
                 obj['evaluated'] = "D"
+            elif "WA" in evaluation_results:
+                obj['evaluated'] = "C"
             elif "TLE" in evaluation_results:
-                obj['evaluated'] = "E"
+                obj['evaluated'] = "F"
             else:
                 obj['evaluated'] = "Unknown"
 
@@ -370,14 +344,11 @@ def process_evaluation_data(json_file_path):
             print(f"  Error: Failed to process {location_path}: {e}")
             obj['evaluated'] = []
         
-        # Save file after every 10 objects
         if (i + 1) % 10 == 0:
             print(f"  Saving progress... ({i + 1}/{len(data)} objects processed)")
             with open(output_path, 'w') as f:
                 json.dump(data, f, indent=2)
-    
-    # Create output filename (moved up to be accessible for periodic saves)
-    # Final save
+
     with open(output_path, 'w') as f:
         json.dump(data, f, indent=2)
     
@@ -387,10 +358,8 @@ def process_evaluation_data(json_file_path):
 def main():
     """Main function to process the CodeJudge evaluation file."""
     
-    # Get the current directory
     current_dir = Path.cwd()
     
-    # Look for the target file
     json_file = current_dir / "CodeJudge_Eval_0shot_hard_with_locations.json"
     
     if not json_file.exists():
@@ -398,7 +367,6 @@ def main():
         print(f"Current directory: {current_dir}")
         return
     
-    # Process the file
     output_path = process_evaluation_data(json_file)
     print(f"\nSuccess! Output file created: {output_path}")
 

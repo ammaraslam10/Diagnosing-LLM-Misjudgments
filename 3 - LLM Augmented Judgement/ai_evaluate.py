@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-AI Evaluation Script
-
-This script loads the CodeJudge evaluation data, sends the "input" field to an LLM
-to get predictions, adds an "llm_answer" column, and calculates accuracy and F1 scores.
-"""
-
 import json
 import os
 import time
@@ -31,7 +24,6 @@ class AIEvaluator:
         
         self.model = model
         self.client = OpenAI(
-            # base_url="https://openrouter.ai/api/v1",
             api_key=self.api_key
         ) if self.api_key else None
         
@@ -58,7 +50,7 @@ class AIEvaluator:
                         {"role": "user", "content": input_text}
                     ],
                     max_tokens=10,
-                    temperature=0.1
+                    temperature=0.0
                 )
                 
                 answer = response.choices[0].message.content.strip().upper()
@@ -219,7 +211,7 @@ def main():
     # Configuration
     input_file = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation.json"
     output_file = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation_gpt-4o.json"
-    sample_size = None  # Set to a number (e.g., 50) to test on a smaller sample
+    sample_size = None
     
     # Initialize evaluator
     evaluator = AIEvaluator(

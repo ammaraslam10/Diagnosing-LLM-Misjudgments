@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-Logistic Regression Classifier for Misjudgement Prediction
-
-This script loads code quality metrics from CSV files and prediction data from JSON,
-then trains a Logistic Regression classifier to predict misjudgement cases.
-"""
-
 import pandas as pd
 import numpy as np
 import json
@@ -21,6 +14,7 @@ from sklearn.pipeline import Pipeline
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
+import os
 warnings.filterwarnings('ignore')
 
 
@@ -45,7 +39,7 @@ def load_csv_data(csv_reports_path):
     if pylint_file.exists():
         pylint_df = pd.read_csv(pylint_file)
         # Count occurrences of each symbol per file
-        pylint_symbols = pylint_df.groupby(['module', 'symbol']).size().unstack(fill_value=0)
+        pylint_symbols = pylint_df.groupby(['module', 'type']).size().unstack(fill_value=0)
         pylint_symbols = pylint_symbols.add_prefix('pylint_')
         pylint_symbols['filename_base'] = pylint_symbols.index
         pylint_symbols = pylint_symbols.reset_index(drop=True)
@@ -66,13 +60,10 @@ def load_csv_data(csv_reports_path):
         complexipy_df = pd.read_csv(complexipy_file)
         # Aggregate complexity per file
         complexipy_agg = complexipy_df.groupby('File').agg({
-            'Complexity': ['max', 'sum']
+            'Complexity': ['sum']
         }).round(2)
-        # add complexity_spread, complexity_ratio (if max exists)
-        # complexipy_agg[('Complexity', 'spread')] = complexipy_agg[('Complexity', 'max')] - complexipy_agg[('Complexity', 'mean')]
-        # complexipy_agg[('Complexity', 'ratio')] = complexipy_agg[('Complexity', 'max')] / complexipy_agg[('Complexity', 'mean')].replace(0, np.nan)
 
-        complexipy_agg.columns = ['complexity_max', 'complexity_sum']#, 'complexity_spread', 'complexity_ratio']
+        complexipy_agg.columns = ['complexity_sum']
         complexipy_agg = complexipy_agg.reset_index()
         complexipy_agg['filename_base'] = complexipy_agg['File'].str.replace('.py', '')
         data_sources['complexipy'] = complexipy_agg
@@ -116,7 +107,14 @@ def load_misjudgement_data(json_file):
             'answer': item.get('answer', ''),
             'llm_answer': item.get('llm_answer', ''),
             'evaluated': item.get('evaluated', ''),
-            'data_id': item.get('data_id', 0)
+            'data_id': item.get('data_id', 0),
+            "difficulty": 0 if item.get('difficulty') == 'introductory' else 1 if item.get('difficulty') == 'interview' else 2 if item.get('difficulty') == 'competition' else None,             # convert introductory to 0, interview to 1, competition to 2
+            "problem_text_length": item.get('problem_text_length', 0),
+            "solution_text_length": item.get('solution_text_length', 0),
+            "prompt_perplexity": item.get('prompt_perplexity', 0),
+            "statement_gunning_fog_index": item.get('statement_gunning_fog_index', 0),
+            "statement_flesch_kincaid_grade": item.get('statement_flesch_kincaid_grade', 0),
+            "api_calls": item.get('api_calls', 0),
         })
     
     df = pd.DataFrame(records)
@@ -128,6 +126,32 @@ def load_misjudgement_data(json_file):
 def merge_all_data(csv_data, json_df):
     """Merge all CSV metrics with JSON misjudgement data."""
     # Start with the JSON data as base
+    print(f"\n=== DATA AVAILABILITY ANALYSIS ===")
+    print(f"Total JSON misjudgement entries: {len(json_df)}")
+    print(f"Misjudgement breakdown: {json_df['misjudgement'].value_counts().to_dict()}")
+    
+    # Display counts for each CSV source
+    print(f"\n=== CSV DATA SOURCES ===")
+    for source_name, source_df in csv_data.items():
+        print(f"{source_name.upper()}: {len(source_df)} entries")
+        print(f"  Sample filenames: {list(source_df['filename_base'].head(3))}")
+    
+    print(f"\n=== FILENAME MATCHING ANALYSIS ===")
+    json_filenames = set(json_df['filename_base'])
+    print(f"Unique JSON filenames: {len(json_filenames)}")
+    
+    for source_name, source_df in csv_data.items():
+        csv_filenames = set(source_df['filename_base'])
+        matches = json_filenames.intersection(csv_filenames)
+        missing = json_filenames - csv_filenames
+        print(f"\n{source_name.upper()} matching:")
+        print(f"  Matches with JSON: {len(matches)}/{len(json_filenames)} ({len(matches)/len(json_filenames)*100:.1f}%)")
+        print(f"  Missing from CSV: {len(missing)} entries")
+        if len(missing) <= 10:
+            print(f"  Missing files: {list(missing)}")
+        else:
+            print(f"  Sample missing files: {list(missing)[:5]}...")
+
     merged_df = json_df.copy()
     
     # Merge each CSV data source
@@ -148,12 +172,45 @@ def merge_all_data(csv_data, json_df):
         merged_df[security_pylint_cols] = merged_df[security_pylint_cols].fillna(0)
     
     # Report remaining missing data patterns
+    print(f"\n=== MISSING DATA ANALYSIS BY MISJUDGEMENT TYPE ===")
+    
+    # Group by misjudgement status
+    misjudged_data = merged_df[merged_df['misjudgement'] == True]
+    correct_data = merged_df[merged_df['misjudgement'] == False]
+    
+    print(f"\nMisjudged entries: {len(misjudged_data)}")
+    print(f"Correct entries: {len(correct_data)}")
+    
     missing_info = []
     for col in numeric_columns:
         if merged_df[col].isna().any():
-            missing_count = merged_df[col].isna().sum()
-            missing_info.append((col, missing_count, missing_count/len(merged_df)*100))
-            print(f"Missing data in {col}: {missing_count} values ({missing_count/len(merged_df)*100:.1f}%)")
+            total_missing = merged_df[col].isna().sum()
+            misjudged_missing = misjudged_data[col].isna().sum()
+            correct_missing = correct_data[col].isna().sum()
+            
+            missing_info.append((col, total_missing, total_missing/len(merged_df)*100))
+            
+            print(f"\nMissing data in {col}:")
+            print(f"  Total: {total_missing}/{len(merged_df)} ({total_missing/len(merged_df)*100:.1f}%)")
+            print(f"  Misjudged: {misjudged_missing}/{len(misjudged_data)} ({misjudged_missing/len(misjudged_data)*100:.1f}%)")
+            print(f"  Correct: {correct_missing}/{len(correct_data)} ({correct_missing/len(correct_data)*100:.1f}%)")
+    
+    # Summary of data completeness by source
+    print(f"\n=== DATA COMPLETENESS SUMMARY ===")
+    for source_name, source_df in csv_data.items():
+        source_cols = [col for col in merged_df.columns if source_name.lower() in col.lower() or 
+                      (source_name == 'radon' and col in ['LOC', 'LLOC', 'SLOC', 'Comments', 'Cyclomatic Complexity', 'Maintainability Index']) or
+                      (source_name == 'complexipy' and 'complexity_' in col)]
+        
+        if source_cols:
+            complete_rows = merged_df[source_cols].notna().all(axis=1).sum()
+            print(f"{source_name.upper()}: {complete_rows}/{len(merged_df)} complete ({complete_rows/len(merged_df)*100:.1f}%)")
+            
+            # Break down by misjudgement type
+            misjudged_complete = misjudged_data[source_cols].notna().all(axis=1).sum()
+            correct_complete = correct_data[source_cols].notna().all(axis=1).sum()
+            print(f"  Misjudged complete: {misjudged_complete}/{len(misjudged_data)} ({misjudged_complete/len(misjudged_data)*100:.1f}%)")
+            print(f"  Correct complete: {correct_complete}/{len(correct_data)} ({correct_complete/len(correct_data)*100:.1f}%)")
     
     if missing_info:
         print(f"\nFound missing data in {len(missing_info)} remaining columns - will be imputed with median")
@@ -170,21 +227,73 @@ def merge_all_data(csv_data, json_df):
 
 def prepare_features_and_target(df):
     """Prepare feature matrix and target variable."""
+    # Define feature renaming dictionary for better readability
+    feature_rename_dict = {
+        # Radon metrics
+        'LOC': 'Lines of Code',
+        'LLOC': 'Logical Lines of Code',
+        'SLOC': 'Source Lines of Code',
+        'Comments': 'Comment Lines',
+        'Cyclomatic Complexity': 'Cyclomatic Complexity',
+        'Maintainability Index': 'Maintainability Index',
+        'h1': 'Unique Operators',
+        'h2': 'Unique Operands', 
+        'h': 'Vocabulary Size',
+        'N1': 'Total Operators',
+        'N2': 'Total Operands',
+        'N': 'Program Length',
+        'Vocabulary': 'Vocabulary',
+        'Volume': 'Halstead Volume',
+        'Difficulty': 'Halstead Difficulty',
+        'Effort': 'Halstead Effort',
+        'Bugs': 'Halstead Bugs',
+        'Time': 'Halstead Time',
+        
+        # Pylint metrics
+        'pylint_total_issues': 'Total Pylint Issues',
+        'pylint_convention': 'Pylint Convention Issues',
+        'pylint_refactor': 'Pylint Refactor Issues',
+        'pylint_warning': 'Pylint Warning Issues',
+        'pylint_error': 'Pylint Error Issues',
+        
+        # Complexipy metrics
+        'complexity_sum': 'Cognitive Complexity',
+        
+        # Bandit security metrics
+        'bandit_total_issues': 'Total Security Issues',
+        'bandit_unique_severities': 'Security Severity Types',
+        'bandit_unique_confidences': 'Security Confidence Types',
+        
+        # Problem characteristics
+        'difficulty': 'Problem Difficulty Level',
+        'problem_text_length': 'Problem Description Length',
+        'solution_text_length': 'Solution Code Length',
+        "prompt_perplexity": "Prompt Perplexity",
+        "statement_gunning_fog_index": "Statement Gunning Fog Index",
+        "statement_flesch_kincaid_grade": "Statement Flesch-Kincaid Grade",
+        "api_calls": "Function Calls"
+    }
+    
     # Define base feature columns (all numeric metrics)
     base_feature_columns = [
         # Radon metrics
-        'LOC', 'LLOC', 'SLOC', 'Comments', 'Cyclomatic Complexity', 
-        'Maintainability Index', 'h1', 'h2', 'h', 'N1', 'N2', 'N', 
-        'Vocabulary', 'Volume', 'Difficulty', 'Effort', 'Bugs', 'Time',
+        'LOC', 'LLOC', #'SLOC',
+        'Comments', 'Cyclomatic Complexity', 
+        'Maintainability Index', #'h1', 'h2', 'h', 'N1', 'N2', 'N', 
+        #'Vocabulary', 
+        'Volume', 'Difficulty', 'Effort', 'Bugs', 'Time',
         
         # Pylint total issues
-        'pylint_total_issues',
+        # 'pylint_total_issues',
         
         # Complexipy metrics
-        'complexity_max', 'complexity_sum',
+        'complexity_sum',
         
         # Bandit metrics
-        'bandit_total_issues', 'bandit_unique_severities', 'bandit_unique_confidences'
+        'bandit_total_issues', 'bandit_unique_severities', 'bandit_unique_confidences',
+
+        "difficulty", "problem_text_length", "solution_text_length", "prompt_perplexity",
+        "statement_gunning_fog_index", "statement_flesch_kincaid_grade", "api_calls"
     ]
     
     # Add all pylint symbol columns (they start with 'pylint_' and are not 'pylint_total_issues')
@@ -197,16 +306,29 @@ def prepare_features_and_target(df):
     available_features = [col for col in feature_columns if col in df.columns]
     print(f"Available features ({len(available_features)}): {len(pylint_symbol_columns)} pylint symbols + {len(base_feature_columns)} base metrics")
     print(f"Pylint symbols found: {pylint_symbol_columns[:10]}{'...' if len(pylint_symbol_columns) > 10 else ''}")
-    print("Note: Missingness indicators will be added during training with proper train/test split")
+
+    # Create a copy of the dataframe and rename columns using the dictionary
+    df_renamed = df.copy()
     
-    X = df[available_features]
+    # Only rename columns that exist in both the dataframe and our rename dictionary
+    columns_to_rename = {old_name: new_name for old_name, new_name in feature_rename_dict.items() 
+                        if old_name in df_renamed.columns}
+    
+    print(f"Renaming {len(columns_to_rename)} features with descriptive names")
+    df_renamed = df_renamed.rename(columns=columns_to_rename)
+    
+    # Update available_features to use renamed column names
+    renamed_features = [feature_rename_dict.get(col, col) for col in available_features]
+    
+    X = df_renamed[renamed_features]
     y = df['misjudgement']
     
     print(f"Feature matrix shape: {X.shape}")
     print(f"Target variable shape: {y.shape}")
     print(f"Target distribution: {y.value_counts().to_dict()}")
+    print(f"Sample renamed features: {renamed_features[:5]}")
     
-    return X, y, available_features
+    return X, y, renamed_features
 
 
 def train_logistic_regression(X, y, feature_names):
@@ -245,7 +367,8 @@ def train_logistic_regression(X, y, feature_names):
     print(classification_report(y_test, y_pred))
     
     print("\nConfusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
+    cm = confusion_matrix(y_test, y_pred)
+    print(cm)
     
     # ROC AUC Score
     auc_score = roc_auc_score(y_test, y_pred_proba)
@@ -259,7 +382,6 @@ def train_logistic_regression(X, y, feature_names):
         imputer_fitted = full_pipeline.named_steps['imputer']
         feature_names_out = imputer_fitted.get_feature_names_out(feature_names)
     except:
-        # Fallback: estimate feature names
         feature_names_out = [f"feature_{i}" for i in range(len(classifier.coef_[0]))]
     
     # Calculate odds ratios and bootstrap confidence intervals
@@ -318,9 +440,8 @@ def train_logistic_regression(X, y, feature_names):
         print(f"This means: More lines of code → LOWER chance of misjudgement")
         
     else:
-        # Fallback: no confidence intervals
-        ci_lower = odds_ratios * 0.8  # Rough approximation
-        ci_upper = odds_ratios * 1.2
+        ci_lower = None
+        ci_upper = None
         print("Bootstrap failed, using fallback CIs")
     
     # Calculate permutation importance
@@ -349,15 +470,16 @@ def train_logistic_regression(X, y, feature_names):
         'or_ci_upper': ci_upper,
         'perm_importance_mean': perm_importance.importances_mean,
         'perm_importance_std': perm_importance.importances_std
-    }).sort_values('perm_importance_mean', ascending=False)
+    }).sort_values('coefficient', ascending=False)
     
-    print("\n=== Top 10 Most Important Features (by permutation importance) ===")
-    print(feature_analysis.head(10)[['feature', 'coefficient', 'odds_ratio', 'perm_importance_mean']])
+    print("\n=== Important Features ===")
+    print(feature_analysis.head(100)[['feature', 'coefficient', 'odds_ratio']])
     
     print("\n=== Odds Ratios with Confidence Intervals (Top 10) ===")
-    top_or = feature_analysis.head(10)
+    top_or = feature_analysis.head(100)
     for _, row in top_or.iterrows():
-        print(f"{row['feature']}: OR = {row['odds_ratio']:.3f} [{row['or_ci_lower']:.3f} - {row['or_ci_upper']:.3f}]")
+        if row['or_ci_lower'] is not None and row['or_ci_upper'] is not None:
+            print(f"{row['feature']}: OR = {row['odds_ratio']:.3f} (95% CI: {row['or_ci_lower']:.3f} - {row['or_ci_upper']:.3f})")
     
     # Cross-validation scores using the full pipeline (prevents data leakage)
     cv_scores = cross_val_score(full_pipeline, X_train, y_train, cv=5, scoring='roc_auc')
@@ -369,9 +491,47 @@ def train_logistic_regression(X, y, feature_names):
         'cv_scores': cv_scores,
         'intercept': classifier.intercept_[0],
         'y_test': y_test,
+        'y_pred': y_pred,
         'y_pred_proba': y_pred_proba,
+        'confusion_matrix': cm,
         'perm_importance': perm_importance
     }
+
+
+def create_confusion_matrix_heatmap(results):
+    """Create a separate, detailed confusion matrix heatmap with seaborn."""
+    plt.figure(figsize=(10, 8))
+    
+    # Get confusion matrix
+    cm = results['confusion_matrix']
+    y_test = results['y_test']
+    y_pred = results['y_pred']
+    
+    # Create heatmap with seaborn
+    ax = sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                     xticklabels=['Misjudged is false', 'Misjudged is true'], 
+                     yticklabels=['Misjudged is false', 'Misjudged is true'],
+                     cbar_kws={'label': 'Number of Cases'},
+                     annot_kws={'size': 16})
+    
+    # Increase font sizes
+    plt.title('Confusion Matrix - Misjudgement Prediction', fontsize=18, pad=20)
+    plt.xlabel('Predicted Label', fontsize=14)
+    plt.ylabel('True Label', fontsize=14)
+    
+    # Increase tick label font sizes
+    ax.tick_params(axis='x', labelsize=12)
+    ax.tick_params(axis='y', labelsize=12)
+    
+    # Increase colorbar font size
+    cbar = ax.collections[0].colorbar
+    cbar.ax.tick_params(labelsize=12)
+    cbar.set_label('Number of Cases', fontsize=14)
+    
+    plt.tight_layout()
+    plt.savefig('report/confusion_matrix_logistic_regression.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    print("Confusion matrix heatmap saved as 'report/confusion_matrix_logistic_regression.png'")
 
 
 def plot_results(feature_analysis, results, y_test, y_pred_proba):
@@ -392,12 +552,12 @@ def plot_results(feature_analysis, results, y_test, y_pred_proba):
     # 2. Coefficients with error bars
     plt.subplot(3, 3, 2)
     # top_coef = feature_analysis.nlargest(15, 'abs_coefficient').sort_values('abs_coefficient', ascending=True)
-    top_coef = feature_analysis.head(15)
+    top_coef = feature_analysis.head(100)
     colors_coef = ['red' if x < 0 else 'blue' for x in top_coef['coefficient']]
     plt.barh(range(len(top_coef)), top_coef['coefficient'], color=colors_coef, alpha=0.7)
     plt.yticks(range(len(top_coef)), [f[:20] + '...' if len(f) > 20 else f for f in top_coef['feature']], fontsize=8)
     plt.xlabel('Coefficient Value')
-    plt.title('Direction of Effect (Top 15 Coefficients)')
+    plt.title('Direction of Effect (Coefficients)')
     plt.axvline(x=0, color='black', linestyle='--', alpha=0.5)
     plt.grid(True, alpha=0.3)
     
@@ -511,19 +671,18 @@ def plot_results(feature_analysis, results, y_test, y_pred_proba):
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('comprehensive_misjudgement_analysis.png', dpi=300, bbox_inches='tight')
+    plt.savefig('report/logistic_regression_misjudgement_results.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 
 def main():
     """Main execution function."""
-    print("=== Logistic Regression Classifier for Misjudgement Prediction ===\n")
+    print("Logistic Regression Classifier for Misjudgement Prediction\n")
     
-    # Paths
     csv_reports_path = "CSV_Reports"
-    json_file_path = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation_4o-mini_mis.json"
+    json_file_path = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation.json"
+    os.makedirs('report', exist_ok=True)
     
-    # Load data
     print("Loading CSV metrics data...")
     csv_data = load_csv_data(csv_reports_path)
     
@@ -544,22 +703,17 @@ def main():
     pipeline, feature_analysis, results = train_logistic_regression(X, y, feature_names)
     
     print("\nGenerating plots...")
+    create_confusion_matrix_heatmap(results)
     plot_results(feature_analysis, results, results['y_test'], results['y_pred_proba'])
     
-    # Save the trained model and results
     print("\nSaving results...")
-    merged_df.to_csv('logistic_regression_misjudgement_dataset.csv', index=False)
-    feature_analysis.to_csv('comprehensive_feature_analysis.csv', index=False)
+    merged_df.to_csv('report/logistic_regression_misjudgement_dataset.csv', index=False)
+    feature_analysis.to_csv('report/comprehensive_feature_analysis.csv', index=False)
     
-    print("\n=== Training Complete ===")
+    print("\nTraining Complete")
     print(f"Test AUC Score: {results['test_auc']:.4f}")
     print(f"Mean CV AUC Score: {results['cv_scores'].mean():.4f}")
     print(f"Model Intercept: {results['intercept']:.4f}")
-    print("\nFiles saved:")
-    print("- logistic_regression_misjudgement_dataset.csv: Complete dataset with features and target")
-    print("- comprehensive_feature_analysis.csv: Coefficients, odds ratios, and permutation importance")
-    print("- comprehensive_misjudgement_analysis.png: Comprehensive visualization plots")
-
 
 if __name__ == "__main__":
     main()

@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-Script to add APPS location information to CodeJudge evaluation files.
-
-This script reads CodeJudge evaluation JSON files, matches URLs with APPS metadata,
-and creates new JSON files with location information added.
-"""
-
 import json
 import os
 import glob
@@ -24,7 +17,6 @@ def build_url_to_location_mapping(apps_base_path: str) -> Dict[str, str]:
     """
     url_to_location = {}
     
-    # Check both train and test directories
     for split in ['train', 'test']:
         split_path = os.path.join(apps_base_path, split)
         if not os.path.exists(split_path):
@@ -80,11 +72,10 @@ def add_locations_to_codejudge_file(input_file: str, output_file: str, url_mappi
                 entry['location'] = url_mapping[url]
                 matched_count += 1
             else:
-                entry['location'] = None  # URL not found in APPS
+                entry['location'] = None
         else:
-            entry['location'] = None  # No URL in entry
+            entry['location'] = None
     
-    # Write the updated data
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     
@@ -93,11 +84,9 @@ def add_locations_to_codejudge_file(input_file: str, output_file: str, url_mappi
 
 def main():
     """Main function to process all CodeJudge files."""
-    # Configuration
-    base_path = "/Users/ammar/Desktop/Masters/3 - Thesis/metrices project/Thesis Analysis/2026-01-01"
+    base_path = "./"
     apps_path = os.path.join(base_path, "APPS")
     
-    # Input and output file patterns
     codejudge_files = [
         "CodeJudge_Eval_0shot_easy.json",
         "CodeJudge_Eval_0shot_middle.json", 
@@ -111,7 +100,6 @@ def main():
         print("ERROR: No URL mappings found! Check APPS directory structure.")
         return
     
-    # Process each CodeJudge file
     for filename in codejudge_files:
         input_path = os.path.join(base_path, filename)
         
@@ -119,17 +107,14 @@ def main():
             print(f"WARNING: File {input_path} not found, skipping...")
             continue
         
-        # Create output filename
         name_part, ext = os.path.splitext(filename)
         output_filename = f"{name_part}_with_locations{ext}"
         output_path = os.path.join(base_path, output_filename)
         
-        # Process the file
         add_locations_to_codejudge_file(input_path, output_path, url_mapping)
     
     print("\nProcessing complete!")
     
-    # Print some statistics
     print(f"\nURL Mapping Statistics:")
     train_locations = sum(1 for loc in url_mapping.values() if 'train' in loc)
     test_locations = sum(1 for loc in url_mapping.values() if 'test' in loc)

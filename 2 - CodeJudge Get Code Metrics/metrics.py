@@ -92,32 +92,6 @@ def runComplexipy(folderName):
       print("Complexipy Command executed successfully.")
   else:
       print(f"An error occurred: {process.stderr}")
-#   # Initialize an empty list to store rows
-#   rows = []
-
-#   # Read the text file and parse it
-#   with open(txtReport, 'r') as file:
-#       lines = file.readlines()
-#       start_collecting = False
-#       for line in lines:
-#           line = line.strip()
-#           if line.startswith('┏'):
-#               start_collecting = True
-#               continue
-#           if line.startswith('┗'):
-#               break
-#           if start_collecting and line.startswith('│'):
-#               # Split line into columns
-#               columns = [col.strip() for col in line.split('│')[1:-1]]
-#               rows.append(columns)
-
-#   # Write the rows to a CSV file
-#   with open(complexipyReport, 'w', newline='') as csvfile:
-#       writer = csv.writer(csvfile)
-#       # Writing the header
-#       writer.writerow(['Path', 'File', 'Function', 'Complexity'])
-#       # Writing the data rows
-#       writer.writerows(rows)
 
   # Match any *.py line as a "file line"
   file_re = re.compile(r"^\s*([^\s].*?\.py)\s*$")

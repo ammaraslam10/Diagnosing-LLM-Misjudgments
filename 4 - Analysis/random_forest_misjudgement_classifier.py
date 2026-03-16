@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-Random Forest Classifier with SHAP Analysis for Misjudgement Prediction
-
-This script loads code quality metrics from CSV files and prediction data from JSON,
-then trains a Random Forest classifier to predict misjudgement cases with comprehensive
-SHAP-based explainability analysis.
-"""
-
 import pandas as pd
 import numpy as np
 import json
@@ -15,12 +7,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve
 from sklearn.preprocessing import StandardScaler
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import seaborn as sns
 import shap
 import warnings
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 warnings.filterwarnings('ignore')
 
 # Set up plotting parameters
@@ -50,7 +42,7 @@ def load_csv_data(csv_reports_path):
     if pylint_file.exists():
         pylint_df = pd.read_csv(pylint_file)
         # Count occurrences of each symbol per file
-        pylint_symbols = pylint_df.groupby(['module', 'symbol']).size().unstack(fill_value=0)
+        pylint_symbols = pylint_df.groupby(['module', 'type']).size().unstack(fill_value=0)
         pylint_symbols = pylint_symbols.add_prefix('pylint_')
         pylint_symbols['filename_base'] = pylint_symbols.index
         pylint_symbols = pylint_symbols.reset_index(drop=True)
@@ -71,9 +63,9 @@ def load_csv_data(csv_reports_path):
         complexipy_df = pd.read_csv(complexipy_file)
         # Aggregate complexity per file
         complexipy_agg = complexipy_df.groupby('File').agg({
-            'Complexity': ['max', 'sum']
+            'Complexity': ['sum']
         }).round(2)
-        complexipy_agg.columns = ['complexity_max', 'complexity_sum']
+        complexipy_agg.columns = ['complexity_sum']
         complexipy_agg = complexipy_agg.reset_index()
         complexipy_agg['filename_base'] = complexipy_agg['File'].str.replace('.py', '')
         data_sources['complexipy'] = complexipy_agg
@@ -117,7 +109,14 @@ def load_misjudgement_data(json_file):
             'answer': item.get('answer', ''),
             'llm_answer': item.get('llm_answer', ''),
             'evaluated': item.get('evaluated', ''),
-            'data_id': item.get('data_id', 0)
+            'data_id': item.get('data_id', 0),
+            "difficulty": 0 if item.get('difficulty') == 'introductory' else 1 if item.get('difficulty') == 'interview' else 2 if item.get('difficulty') == 'competition' else None,
+            "problem_text_length": item.get('problem_text_length', 0),
+            "solution_text_length": item.get('solution_text_length', 0),
+            "prompt_perplexity": item.get('prompt_perplexity', 0),
+            "statement_gunning_fog_index": item.get('statement_gunning_fog_index', 0),
+            "statement_flesch_kincaid_grade": item.get('statement_flesch_kincaid_grade', 0),
+            "api_calls": item.get('api_calls', 0),
         })
     
     df = pd.DataFrame(records)
@@ -155,53 +154,126 @@ def merge_all_data(csv_data, json_df):
             print(f"Missing data in {col}: {missing_count} values ({missing_count/len(merged_df)*100:.1f}%) - filling with median")
             merged_df[col] = merged_df[col].fillna(merged_df[col].median())
     
-    # Remove non-feature columns
-    merged_df = merged_df.drop(columns=['filename_base', 'task_id', 'source', 'answer', 'llm_answer', 'evaluated', 'data_id', 'File Name'], errors='ignore')
+    # Keep identification columns for detailed analysis
+    identification_columns = ['filename_base', 'task_id', 'source', 'answer', 'llm_answer', 'evaluated', 'data_id']
     
-    return merged_df
+    return merged_df, identification_columns
 
 
-def prepare_features_and_target(df):
+def prepare_features_and_target(df, identification_columns):
     """Prepare feature matrix and target variable."""
+    # Define feature renaming dictionary for better readability
+    feature_rename_dict = {
+        # Radon metrics
+        'LOC': 'Lines of Code',
+        'LLOC': 'Logical Lines of Code',
+        'SLOC': 'Source Lines of Code',
+        'Comments': 'Comment Lines',
+        'Cyclomatic Complexity': 'Cyclomatic Complexity',
+        'Maintainability Index': 'Maintainability Index',
+        'h1': 'Unique Operators',
+        'h2': 'Unique Operands', 
+        'h': 'Vocabulary Size',
+        'N1': 'Total Operators',
+        'N2': 'Total Operands',
+        'N': 'Program Length',
+        'Vocabulary': 'Vocabulary',
+        'Volume': 'Halstead Volume',
+        'Difficulty': 'Halstead Difficulty',
+        'Effort': 'Halstead Effort',
+        'Bugs': 'Halstead Bugs',
+        'Time': 'Halstead Time',
+        
+        # Pylint metrics
+        'pylint_total_issues': 'Total Pylint Issues',
+        'pylint_convention': 'Pylint Convention Issues',
+        'pylint_refactor': 'Pylint Refactor Issues',
+        'pylint_warning': 'Pylint Warning Issues',
+        'pylint_error': 'Pylint Error Issues',
+
+        # Complexipy metrics
+        'complexity_sum': 'Cognitive Complexity',
+        
+        # Bandit security metrics
+        'bandit_total_issues': 'Total Security Issues',
+        'bandit_unique_severities': 'Security Severity Types',
+        'bandit_unique_confidences': 'Security Confidence Types',
+        
+        # Problem characteristics
+        'difficulty': 'Problem Difficulty Level',
+        'problem_text_length': 'Problem Description Length',
+        'solution_text_length': 'Solution Code Length', 
+        "prompt_perplexity": "Prompt Perplexity",
+        "statement_gunning_fog_index": "Statement Gunning Fog Index",
+        "statement_flesch_kincaid_grade": "Statement Flesch-Kincaid Grade",
+        "api_calls": "Function Calls"
+    }
+    
     # Define base feature columns (all numeric metrics)
     base_feature_columns = [
         # Radon metrics
-        'LOC', 'LLOC', 'SLOC', 'Comments', 'Cyclomatic Complexity', 
-        'Maintainability Index', 'h1', 'h2', 'h', 'N1', 'N2', 'N', 
-        'Vocabulary', 'Volume', 'Difficulty', 'Effort', 'Bugs', 'Time',
+        'LOC', 'LLOC', #'SLOC',
+        'Comments', 'Cyclomatic Complexity', 
+        'Maintainability Index', #'h1', 'h2', 'h', 'N1', 'N2', 'N', 
+        #'Vocabulary', 
+        'Volume', 'Difficulty', 'Effort', 'Bugs', 'Time',
         
         # Pylint total issues
-        'pylint_total_issues',
-        
+        # 'pylint_total_issues',
+
         # Complexipy metrics
-        'complexity_max', 'complexity_sum',
+        'complexity_sum',
         
         # Bandit metrics
-        'bandit_total_issues', 'bandit_unique_severities', 'bandit_unique_confidences'
+        'bandit_total_issues', 'bandit_unique_severities', 'bandit_unique_confidences',
+
+        "difficulty", "problem_text_length", "solution_text_length", "prompt_perplexity",
+        "statement_gunning_fog_index", "statement_flesch_kincaid_grade", "api_calls"
     ]
     
-    # Add all pylint symbol columns
+    # Add all pylint symbol columns (they start with 'pylint_' and are not 'pylint_total_issues')
     pylint_symbol_columns = [col for col in df.columns if col.startswith('pylint_') and col != 'pylint_total_issues']
+    
+    # Combine base features and pylint symbols (no missingness indicators yet - they'll be added during training)
     feature_columns = base_feature_columns + pylint_symbol_columns
     
     # Filter columns that actually exist in the dataframe
     available_features = [col for col in feature_columns if col in df.columns]
     print(f"Available features ({len(available_features)}): {len(pylint_symbol_columns)} pylint symbols + {len(base_feature_columns)} base metrics")
+    print(f"Pylint symbols found: {pylint_symbol_columns[:10]}{'...' if len(pylint_symbol_columns) > 10 else ''}")
     
-    X = df[available_features]
+    # Create a copy of the dataframe and rename columns using the dictionary
+    df_renamed = df.copy()
+    
+    # Only rename columns that exist in both the dataframe and our rename dictionary
+    columns_to_rename = {old_name: new_name for old_name, new_name in feature_rename_dict.items() 
+                        if old_name in df_renamed.columns}
+    
+    print(f"Renaming {len(columns_to_rename)} features with descriptive names")
+    df_renamed = df_renamed.rename(columns=columns_to_rename)
+    
+    # Update available_features to use renamed column names
+    renamed_features = [feature_rename_dict.get(col, col) for col in available_features]
+    
+    # Separate features and identification info
+    X = df_renamed[renamed_features]
     y = df['misjudgement']
     
-    print(f"Feature matrix shape: {X.shape}")
-    print(f"Target distribution: {y.value_counts().to_dict()}")
+    # Keep identification data for later use
+    identification_data = df[identification_columns]
     
-    return X, y, available_features
+    print(f"Feature matrix shape: {X.shape}")
+    print(f"Target variable shape: {y.shape}")
+    print(f"Target distribution: {y.value_counts().to_dict()}")
+    print(f"Sample renamed features: {renamed_features[:5]}")
+    
+    return X, y, renamed_features, identification_data
 
-
-def train_random_forest_with_shap(X, y, feature_names):
+def train_random_forest_with_shap(X, y, feature_names, identification_data):
     """Train Random Forest classifier and perform SHAP analysis."""
-    # Split the data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+    # Split the data while keeping identification info aligned
+    X_train, X_test, y_train, y_test, id_train, id_test = train_test_split(
+        X, y, identification_data, test_size=0.2, random_state=42, stratify=y
     )
     
     print(f"Training set size: {X_train.shape}")
@@ -235,7 +307,7 @@ def train_random_forest_with_shap(X, y, feature_names):
     y_pred_proba = best_rf.predict_proba(X_test)[:, 1]
     
     # Evaluate the model
-    print("\n=== Model Evaluation ===")
+    print("\nModel Evaluation")
     print("Classification Report:")
     print(classification_report(y_test, y_pred))
     
@@ -243,10 +315,11 @@ def train_random_forest_with_shap(X, y, feature_names):
     print(f"\nROC AUC Score: {auc_score:.4f}")
     
     print("\nConfusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
+    cm = confusion_matrix(y_test, y_pred)
+    print(cm)
 
     # SHAP Analysis
-    print("\n=== SHAP Analysis ===")
+    print("\nSHAP Analysis")
     print("Computing SHAP values (this may take a few moments)...")
     
     # Create SHAP explainer
@@ -297,8 +370,8 @@ def train_random_forest_with_shap(X, y, feature_names):
         'shap_importance': mean_shap_values
     }).sort_values('shap_importance', ascending=False)
     
-    print("\n=== Top 15 Features by SHAP Importance ===")
-    print(shap_importance.head(15))
+    print("\n=== Features by SHAP Importance ===")
+    print(shap_importance)
     
     # Traditional feature importance for comparison
     feature_importance = pd.DataFrame({
@@ -391,14 +464,14 @@ def create_shap_visualizations(explainer, shap_values, X_test, feature_names, co
         plt.title('SHAP Feature Importance - Impact on Misjudgement Prediction', fontsize=14, pad=20)
         plt.xlabel('SHAP Value (impact on model output)', fontsize=12)
         plt.tight_layout()
-        plt.savefig('1_shap_beeswarm_plot.png', dpi=300, bbox_inches='tight')
+        plt.savefig('report/1_shap_beeswarm_plot.png', dpi=300, bbox_inches='tight')
         plt.close()
     except Exception as e:
         print(f"Error creating beeswarm plot: {e}")
         plt.figure(figsize=(12, 8))
         plt.text(0.5, 0.5, f'SHAP Beeswarm Plot\nError: {str(e)}', ha='center', va='center', fontsize=12)
         plt.title('SHAP Feature Importance (Beeswarm) - Error')
-        plt.savefig('1_shap_beeswarm_plot_error.png', dpi=300, bbox_inches='tight')
+        plt.savefig('report/1_shap_beeswarm_plot_error.png', dpi=300, bbox_inches='tight')
         plt.close()
     
     # Plot 2: SHAP Summary Plot (Bar) with clustering
@@ -413,7 +486,7 @@ def create_shap_visualizations(explainer, shap_values, X_test, feature_names, co
             plt.title('SHAP Feature Importance - Mean Absolute Impact', fontsize=14, pad=20)
         plt.xlabel('Mean |SHAP Value|', fontsize=12)
         plt.tight_layout()
-        plt.savefig('2_shap_bar_plot_clustered.png', dpi=300, bbox_inches='tight')
+        plt.savefig('report/2_shap_bar_plot_clustered.png', dpi=300, bbox_inches='tight')
         plt.close()
     except Exception as e:
         print(f"Error creating clustered bar plot: {e}")
@@ -423,33 +496,7 @@ def create_shap_visualizations(explainer, shap_values, X_test, feature_names, co
         plt.title('SHAP Feature Importance - Mean Absolute Impact (Fallback)', fontsize=14, pad=20)
         plt.xlabel('Mean |SHAP Value|', fontsize=12)
         plt.tight_layout()
-        plt.savefig('2_shap_bar_plot_fallback.png', dpi=300, bbox_inches='tight')
-        plt.close()
-    
-    # Plot 3: SHAP Summary Plot (Beeswarm) with clustering
-    print("Creating clustered SHAP beeswarm plot...")
-    plt.figure(figsize=(14, 10))
-    try:
-        if clustering is not None and explanation is not None:
-            shap.plots.beeswarm(explanation, clustering=clustering, max_display=20, show=False)
-            plt.title('SHAP Feature Impact - Clustered by Feature Correlation', fontsize=14, pad=20)
-            plt.xlabel('SHAP Value (impact on model output)', fontsize=12)
-        else:
-            shap.summary_plot(shap_vals_for_plots, X_test, feature_names=feature_names, show=False, max_display=20)
-            plt.title('SHAP Feature Impact - Standard Ordering', fontsize=14, pad=20)
-            plt.xlabel('SHAP Value (impact on model output)', fontsize=12)
-        plt.tight_layout()
-        plt.savefig('3_shap_beeswarm_clustered.png', dpi=300, bbox_inches='tight')
-        plt.close()
-    except Exception as e:
-        print(f"Error creating clustered beeswarm plot: {e}")
-        # Fallback to regular beeswarm
-        plt.figure(figsize=(14, 10))
-        shap.summary_plot(shap_vals_for_plots, X_test, feature_names=feature_names, show=False, max_display=20)
-        plt.title('SHAP Feature Impact - Fallback', fontsize=14, pad=20)
-        plt.xlabel('SHAP Value (impact on model output)', fontsize=12)
-        plt.tight_layout()
-        plt.savefig('3_shap_beeswarm_fallback.png', dpi=300, bbox_inches='tight')
+        plt.savefig('report/2_shap_bar_plot_fallback.png', dpi=300, bbox_inches='tight')
         plt.close()
     
     # Plot 4: SHAP vs Random Forest Importance Comparison
@@ -471,7 +518,7 @@ def create_shap_visualizations(explainer, shap_values, X_test, feature_names, co
     plt.gca().invert_yaxis()
     plt.grid(axis='x', alpha=0.3)
     plt.tight_layout()
-    plt.savefig('4_shap_vs_rf_importance.png', dpi=300, bbox_inches='tight')
+    plt.savefig('report/4_shap_vs_rf_importance.png', dpi=300, bbox_inches='tight')
     plt.close()
     
     # Plot 5: ROC Curve
@@ -486,7 +533,7 @@ def create_shap_visualizations(explainer, shap_values, X_test, feature_names, co
     plt.legend(fontsize=11)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig('5_roc_curve.png', dpi=300, bbox_inches='tight')
+    plt.savefig('report/5_roc_curve.png', dpi=300, bbox_inches='tight')
     plt.close()
     
     # Plot 6: Cross-validation scores
@@ -507,7 +554,7 @@ def create_shap_visualizations(explainer, shap_values, X_test, feature_names, co
     plt.grid(True, alpha=0.3)
     plt.ylim([min(cv_scores) - 0.05, max(cv_scores) + 0.05])
     plt.tight_layout()
-    plt.savefig('6_cross_validation_scores.png', dpi=300, bbox_inches='tight')
+    plt.savefig('report/6_cross_validation_scores.png', dpi=300, bbox_inches='tight')
     plt.close()
     
     # Plot 7: Feature categories breakdown
@@ -564,10 +611,42 @@ def create_shap_visualizations(explainer, shap_values, X_test, feature_names, co
         plt.title('Feature Categories - No Data Available', fontsize=14, pad=20)
     
     plt.tight_layout()
-    plt.savefig('7_feature_categories_pie.png', dpi=300, bbox_inches='tight')
+    plt.savefig('report/7_feature_categories_pie.png', dpi=300, bbox_inches='tight')
     plt.close()
     
-    # Plot 8: Detailed SHAP importance with color coding
+    # Plot 8: Confusion Matrix Heatmap
+    print("Creating confusion matrix heatmap...")
+    plt.figure(figsize=(8, 6))
+    
+    # Create confusion matrix from test results
+    cm = confusion_matrix(results['y_test'], (results['y_pred_proba'] > 0.5).astype(int))
+    
+    # Create heatmap with seaborn
+    ax = sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                     xticklabels=['Misjudged is false', 'Misjudged is true'], 
+                     yticklabels=['Misjudged is false', 'Misjudged is true'],
+                     cbar_kws={'label': 'Number of Cases'},
+                     annot_kws={'size': 16})
+    
+    # Increase font sizes
+    plt.title('Confusion Matrix - Misjudgement Prediction', fontsize=18, pad=20)
+    plt.xlabel('Predicted Label', fontsize=16)
+    plt.ylabel('True Label', fontsize=16)
+    
+    # Increase tick label font sizes
+    ax.tick_params(axis='x', labelsize=16)
+    ax.tick_params(axis='y', labelsize=16)
+    
+    # Increase colorbar font size
+    cbar = ax.collections[0].colorbar
+    cbar.ax.tick_params(labelsize=16)
+    cbar.set_label('Number of Cases', fontsize=16)
+    
+    plt.tight_layout()
+    plt.savefig('report/8_confusion_matrix_heatmap.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    # Plot 9: Detailed SHAP importance with color coding
     print("Creating detailed SHAP importance plot...")
     plt.figure(figsize=(14, 10))
     
@@ -606,18 +685,8 @@ def create_shap_visualizations(explainer, shap_values, X_test, feature_names, co
     plt.gca().invert_yaxis()
     plt.grid(axis='x', alpha=0.3)
     plt.tight_layout()
-    plt.savefig('8_detailed_shap_importance.png', dpi=300, bbox_inches='tight')
+    plt.savefig('report/9_detailed_shap_importance.png', dpi=300, bbox_inches='tight')
     plt.close()
-    
-    print(f"\nCreated 8 separate visualization files:")
-    print("1. 1_shap_beeswarm_plot.png - SHAP feature impact distribution")
-    print("2. 2_shap_bar_plot_clustered.png - SHAP importance with correlation clustering")
-    print("3. 3_shap_beeswarm_clustered.png - SHAP beeswarm with correlation clustering")
-    print("4. 4_shap_vs_rf_importance.png - SHAP vs Random Forest comparison")
-    print("5. 5_roc_curve.png - Model performance curve")
-    print("6. 6_cross_validation_scores.png - Model stability across folds")
-    print("7. 7_feature_categories_pie.png - Feature importance by category")
-    print("8. 8_detailed_shap_importance.png - Top 20 features with color coding")
 
 
 def analyze_feature_effects(combined_importance, X, y):
@@ -663,12 +732,11 @@ def analyze_feature_effects(combined_importance, X, y):
 
 def main():
     """Main execution function."""
-    print("=== Random Forest Classifier with SHAP Analysis ===\n")
+    print("Random Forest Classifier with SHAP Analysis\n")
     
     # Paths
     csv_reports_path = "CSV_Reports"
-    # json_file_path = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation_4o-mini_mis.json"
-    json_file_path = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation_3.5t_mis.json"
+    json_file_path = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation.json"
     
     # Load data
     print("Loading CSV metrics data...")
@@ -678,17 +746,17 @@ def main():
     json_df = load_misjudgement_data(json_file_path)
     
     print("\nMerging all data sources...")
-    merged_df = merge_all_data(csv_data, json_df)
+    merged_df, identification_columns = merge_all_data(csv_data, json_df)
     
     print("\nPreparing features and target...")
-    X, y, feature_names = prepare_features_and_target(merged_df)
+    X, y, feature_names, identification_data = prepare_features_and_target(merged_df, identification_columns)
     
     if len(X) == 0:
         print("ERROR: No matching records found between CSV and JSON data!")
         return
     
     print("\nTraining Random Forest classifier with SHAP analysis...")
-    model, explainer, shap_values, combined_importance, results = train_random_forest_with_shap(X, y, feature_names)
+    model, explainer, shap_values, combined_importance, results = train_random_forest_with_shap(X, y, feature_names, identification_data)
     
     print("\nCreating SHAP visualizations...")
     create_shap_visualizations(explainer, shap_values, results['X_test'], feature_names, combined_importance, results)
@@ -698,8 +766,8 @@ def main():
     
     # Save results
     print("\nSaving results...")
-    merged_df.to_csv('misjudgement_dataset_with_shap.csv', index=False)
-    combined_importance.to_csv('shap_and_rf_feature_importance.csv', index=False)
+    merged_df.to_csv('report/misjudgement_dataset_with_shap.csv', index=False)
+    combined_importance.to_csv('report/shap_and_rf_feature_importance.csv', index=False)
     
     # Create summary report
     summary_report = {
@@ -712,20 +780,15 @@ def main():
         'feature_effects': feature_effects
     }
     
-    with open('shap_analysis_summary.json', 'w') as f:
+    with open('report/shap_analysis_summary.json', 'w') as f:
         json.dump(summary_report, f, indent=2, default=str)
     
-    print("\n=== SHAP Analysis Complete ===")
+    print("\nSHAP Analysis Complete")
     print(f"Best Test AUC Score: {results['test_auc']:.4f}")
     print(f"Mean CV AUC Score: {results['cv_scores'].mean():.4f}")
-    print("\nFiles saved:")
-    print("- misjudgement_dataset_with_shap.csv: Complete dataset")
-    print("- shap_and_rf_feature_importance.csv: Combined feature importance")
-    print("- shap_analysis_summary.json: Summary report")
-    print("- Individual visualization files (7 separate plots for clarity)")
-    
-    print("\n=== TOP FEATURES INFLUENCING LLM MISJUDGMENTS (SHAP Analysis) ===")
-    print(combined_importance.head(15)[['feature', 'shap_importance', 'rf_importance']])
+
+    print("\nTOP FEATURES INFLUENCING LLM MISJUDGMENTS (SHAP Analysis)")
+    print(combined_importance.head(100)[['feature', 'shap_importance', 'rf_importance']])
 
 
 if __name__ == "__main__":
