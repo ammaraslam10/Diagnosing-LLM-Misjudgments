@@ -8,7 +8,11 @@ The pre-requisites is to have CodeJudge_Eval_0shot_X_with_locations_with_evaluat
 ```
 python3 extract_funcs.py
 ```
-4. Run `metrics.py`, it will create a `CSV_reports` folder and generate CSVs with metrics
+4. This step attempts to fix syntax errors minimally (i.e. indentation issues etc) so that static analysis is possible for some tools i.e. radon & complexipy (ast is needed for these to work)
+```
+python3 fix_codes.py
+```
+5. Run `metrics.py`, it will create a `CSV_reports` folder and generate CSVs with metrics
 ```
 python3 metrics.py
 ```
