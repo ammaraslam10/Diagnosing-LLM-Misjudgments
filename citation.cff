@@ -2,9 +2,14 @@ cff-version: 1.2.0
 message: "If you use this repository, please cite the software and the associated dataset."
 title: "CodeJudgeEval-X: Diagnosing LLM Misjudgments in Automated Code Evaluation"
 type: software
+authors:
+  - name: "CodeJudgeEval-X Team"
 version: "0.1.0"
 date-released: 2026-03-17
 abstract: >-
-  Codebase for constructing CodeJudge-Eval-X evaluation files. It augments CodeJudge-Eval dataset static code quality metrics and problem level metrics, and the code for the logistic & RF classifiers for the study.
+  Codebase for constructing CodeJudge-Eval-X evaluation files. It augments
+  the CodeJudge-Eval dataset with static code quality metrics and
+  problem-level metrics, and includes code for the logistic and RF
+  classifiers used in the study.
 repository-code: "https://github.com/ammaraslam10/Diagnosing-LLM-Misjudgments"
 url: "https://github.com/ammaraslam10/Diagnosing-LLM-Misjudgments"
