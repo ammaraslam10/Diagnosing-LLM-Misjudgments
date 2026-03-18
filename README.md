@@ -71,6 +71,8 @@ Each difficulty folder contains analysis summaries:
 - `random_forest_misjudgement_classifier.txt`
 - `report/` (plots and CSV artifacts, e.g., SHAP plots, ROC curve, confusion matrices, and feature-importance tables)
 
+Supplementary beeswarm plot analysis is also present as `beeswarm analysis.md`
+
 ## Dataset
 
 The processed dataset file is kept in `Dataset/`:
