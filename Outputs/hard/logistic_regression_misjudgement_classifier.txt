@@ -1,0 +1,100 @@
+Training set size: (1358, 25)
+Test set size: (340, 25)
+Training Logistic Regression pipeline with imputation...
+
+=== Model Evaluation ===
+Classification Report:
+              precision    recall  f1-score   support
+
+       False       0.47      0.71      0.57       126
+        True       0.76      0.53      0.63       214
+
+    accuracy                           0.60       340
+   macro avg       0.62      0.62      0.60       340
+weighted avg       0.65      0.60      0.61       340
+
+
+Confusion Matrix:
+[[ 90  36]
+ [100 114]]
+
+ROC AUC Score: 0.6427
+Calculating bootstrap confidence intervals...
+Bootstrap successful: 100 samples
+
+=== INTERPRETATION ===
+Most coefficients are NEGATIVE → These are PROTECTIVE factors
+Negative coefficient = Odds Ratio < 1 = REDUCES misjudgement risk
+Example: LOC coefficient = 0.303 → OR = 1.354
+This means: More lines of code → LOWER chance of misjudgement
+
+Calculating permutation importance...
+Coefficients: 25, Features out: 25, Perm importance: 25
+
+=== Top 10 Most Important Features (by permutation importance) ===
+                           feature  coefficient  odds_ratio
+22             Pylint Error Issues     0.823782    2.279104
+21        Pylint Convention Issues     0.387506    1.473302
+20                       API Calls     0.338018    1.402166
+7                  Halstead Effort     0.336346    1.399823
+9                    Halstead Time     0.336346    1.399823
+11           Total Security Issues     0.324782    1.383729
+0                    Lines of Code     0.302936    1.353828
+6              Halstead Difficulty     0.202320    1.224240
+24           Pylint Warning Issues     0.139138    1.149283
+4            Maintainability Index     0.132777    1.141995
+17               Prompt Perplexity     0.106385    1.112250
+8                    Halstead Bugs     0.104665    1.110338
+5                  Halstead Volume     0.104665    1.110338
+3            Cyclomatic Complexity     0.093362    1.097859
+14        Problem Difficulty Level     0.092633    1.097059
+19  Statement Flesch-Kincaid Grade     0.069111    1.071555
+10            Cognitive Complexity     0.056052    1.057653
+16            Solution Code Length     0.021023    1.021246
+2                    Comment Lines    -0.051487    0.949816
+18     Statement Gunning Fog Index    -0.056947    0.944644
+12         Security Severity Types    -0.099292    0.905478
+13       Security Confidence Types    -0.099292    0.905478
+15      Problem Description Length    -0.113530    0.892678
+23          Pylint Refactor Issues    -0.306989    0.735658
+1            Logical Lines of Code    -0.402682    0.668524
+
+=== Odds Ratios with Confidence Intervals (Top 10) ===
+Pylint Error Issues: OR = 2.279 (95% CI: 1.872 - 2.794)
+Pylint Convention Issues: OR = 1.473 (95% CI: 1.113 - 2.514)
+Function Calls: OR = 1.402 (95% CI: 1.188 - 1.824)
+Halstead Effort: OR = 1.400 (95% CI: 0.875 - 2.166)
+Halstead Time: OR = 1.400 (95% CI: 0.875 - 2.166)
+Total Security Issues: OR = 1.384 (95% CI: 0.997 - 1.660)
+Lines of Code: OR = 1.354 (95% CI: 0.676 - 2.976)
+Halstead Difficulty: OR = 1.224 (95% CI: 1.026 - 1.441)
+Pylint Warning Issues: OR = 1.149 (95% CI: 0.969 - 1.359)
+Maintainability Index: OR = 1.142 (95% CI: 0.937 - 1.423)
+Prompt Perplexity: OR = 1.112 (95% CI: 0.980 - 1.326)
+Halstead Bugs: OR = 1.110 (95% CI: 0.732 - 2.211)
+Halstead Volume: OR = 1.110 (95% CI: 0.732 - 2.211)
+Cyclomatic Complexity: OR = 1.098 (95% CI: 0.753 - 1.559)
+Problem Difficulty Level: OR = 1.097 (95% CI: 0.969 - 1.193)
+Statement Flesch-Kincaid Grade: OR = 1.072 (95% CI: 0.838 - 1.378)
+Cognitive Complexity: OR = 1.058 (95% CI: 0.578 - 1.981)
+Solution Code Length: OR = 1.021 (95% CI: 0.629 - 2.076)
+Comment Lines: OR = 0.950 (95% CI: 0.706 - 1.311)
+Statement Gunning Fog Index: OR = 0.945 (95% CI: 0.690 - 1.231)
+Security Severity Types: OR = 0.905 (95% CI: 0.793 - 1.178)
+Security Confidence Types: OR = 0.905 (95% CI: 0.793 - 1.178)
+Problem Description Length: OR = 0.893 (95% CI: 0.767 - 0.995)
+Pylint Refactor Issues: OR = 0.736 (95% CI: 0.572 - 0.889)
+Logical Lines of Code: OR = 0.669 (95% CI: 0.264 - 1.347)
+
+Cross-validation AUC scores: [0.71900874 0.63551618 0.65093023 0.64807018 0.66918129]
+Mean CV AUC: 0.6645 (+/- 0.0586)
+
+Generating plots...
+Confusion matrix heatmap saved as 'report/confusion_matrix_logistic_regression.png'
+
+Saving results...
+
+=== Training Complete ===
+Test AUC Score: 0.6427
+Mean CV AUC Score: 0.6645
+Model Intercept: 0.1889

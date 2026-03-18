@@ -1,0 +1,208 @@
+Best parameters: {'class_weight': 'balanced', 'max_depth': 15, 'min_samples_leaf': 2, 'min_samples_split': 5, 'n_estimators': 200}
+Best cross-validation score: 0.6922
+
+=== Model Evaluation ===
+Classification Report:
+              precision    recall  f1-score   support
+
+       False       0.63      0.44      0.52       126
+        True       0.72      0.85      0.78       214
+
+    accuracy                           0.70       340
+   macro avg       0.68      0.64      0.65       340
+weighted avg       0.69      0.70      0.68       340
+
+
+ROC AUC Score: 0.7006
+
+Confusion Matrix:
+[[ 55  71]
+ [ 32 182]]
+
+=== Detailed Sample Analysis by Prediction Category ===
+
+=== SHAP Analysis ===
+Computing SHAP values (this may take a few moments)...
+SHAP values type: <class 'numpy.ndarray'>
+SHAP values shape: (340, 25, 2)
+Using 3D format - extracted positive class shape: (340, 25)
+Final SHAP values shape for analysis: (340, 25)
+Number of features: 25
+Mean SHAP values shape: (25,)
+Feature names length: 25
+
+=== Features by SHAP Importance ===
+                           feature  shap_importance
+17               Prompt Perplexity     7.991146e-02
+20                  Function Calls     2.097866e-02
+22             Pylint Error Issues     1.859809e-02
+21        Pylint Convention Issues     1.824744e-02
+15      Problem Description Length     1.647136e-02
+16            Solution Code Length     1.642456e-02
+9                    Halstead Time     1.594474e-02
+24           Pylint Warning Issues     1.424129e-02
+7                  Halstead Effort     1.268789e-02
+6              Halstead Difficulty     1.240815e-02
+8                    Halstead Bugs     1.164322e-02
+4            Maintainability Index     1.143805e-02
+19  Statement Flesch-Kincaid Grade     1.046127e-02
+10            Cognitive Complexity     9.510005e-03
+18     Statement Gunning Fog Index     9.351295e-03
+5                  Halstead Volume     9.186097e-03
+1            Logical Lines of Code     7.262349e-03
+0                    Lines of Code     6.731688e-03
+3            Cyclomatic Complexity     5.027261e-03
+2                    Comment Lines     4.973489e-03
+23          Pylint Refactor Issues     4.758148e-03
+14        Problem Difficulty Level     4.644181e-03
+12         Security Severity Types     1.195992e-05
+13       Security Confidence Types     7.681907e-06
+11           Total Security Issues     1.368892e-20
+
+Cross-validation AUC scores: [0.74118464 0.70916565 0.65377907 0.67830409 0.71005848]
+Mean CV AUC: 0.6985 (+/- 0.0598)
+
+Creating SHAP visualizations...
+Creating individual SHAP visualizations...
+Computing feature clustering based on correlations...
+Successfully computed clustering with 24 groups
+Z shape: (24, 4)
+First 10 merges:
+      c1    c2          dist  count
+0   7.0   9.0  5.960464e-07    2.0
+1   5.0   8.0  6.616116e-06    2.0
+2   0.0  16.0  1.339788e-01    2.0
+3   6.0  25.0  1.953099e-01    3.0
+4   1.0  27.0  2.363818e-01    3.0
+5  26.0  28.0  2.933632e-01    5.0
+6   2.0   4.0  4.665635e-01    2.0
+7  18.0  19.0  5.007799e-01    2.0
+8   3.0  29.0  5.496526e-01    4.0
+9  31.0  33.0  5.640208e-01    6.0
+Group 4 (n=5): ['Halstead Volume', 'Halstead Difficulty', 'Halstead Effort', 'Halstead Bugs', 'Halstead Time']
+Group 7 (n=3): ['Lines of Code', 'Logical Lines of Code', 'Solution Code Length']
+Successfully created SHAP Explanation object
+Creating SHAP beeswarm plot...
+Creating SHAP bar plot with clustering...
+Creating SHAP vs RF importance comparison...
+Creating ROC curve...
+Creating cross-validation scores plot...
+Creating feature categories pie chart...
+Creating confusion matrix heatmap...
+Creating detailed SHAP importance plot...
+
+Created 9 separate visualization files:
+1. 1_shap_beeswarm_plot.png - SHAP feature impact distribution
+2. 2_shap_bar_plot_clustered.png - SHAP importance with correlation clustering
+3. 3_shap_beeswarm_clustered.png - SHAP beeswarm with correlation clustering
+4. 4_shap_vs_rf_importance.png - SHAP vs Random Forest comparison
+5. 5_roc_curve.png - Model performance curve
+6. 6_cross_validation_scores.png - Model stability across folds
+7. 7_feature_categories_pie.png - Feature importance by category
+8. 8_confusion_matrix_heatmap.png - Confusion matrix with performance metrics
+9. 9_detailed_shap_importance.png - Top 20 features with color coding
+
+Analyzing feature effects...
+
+=== Feature Effect Analysis ===
+Top 10 features and their relationship with misjudgement:
+Prompt Perplexity:
+  - Correlation with misjudgement: 0.0619
+  - Mean (misjudged cases): 1.04
+  - Mean (correct cases): 1.03
+  - Effect: Higher values increases misjudgement likelihood
+
+Function Calls:
+  - Correlation with misjudgement: 0.0904
+  - Mean (misjudged cases): 10.98
+  - Mean (correct cases): 9.65
+  - Effect: Higher values increases misjudgement likelihood
+
+Pylint Error Issues:
+  - Correlation with misjudgement: 0.1297
+  - Mean (misjudged cases): 0.27
+  - Mean (correct cases): 0.08
+  - Effect: Higher values increases misjudgement likelihood
+
+Pylint Convention Issues:
+  - Correlation with misjudgement: 0.0854
+  - Mean (misjudged cases): 3.04
+  - Mean (correct cases): 2.37
+  - Effect: Higher values increases misjudgement likelihood
+
+Problem Description Length:
+  - Correlation with misjudgement: -0.0094
+  - Mean (misjudged cases): 1633.63
+  - Mean (correct cases): 1646.37
+  - Effect: Higher values decreases misjudgement likelihood
+
+Solution Code Length:
+  - Correlation with misjudgement: 0.1133
+  - Mean (misjudged cases): 740.88
+  - Mean (correct cases): 518.63
+  - Effect: Higher values increases misjudgement likelihood
+
+Halstead Time:
+  - Correlation with misjudgement: 0.0662
+  - Mean (misjudged cases): 72.06
+  - Mean (correct cases): 37.50
+  - Effect: Higher values increases misjudgement likelihood
+
+Pylint Warning Issues:
+  - Correlation with misjudgement: 0.1145
+  - Mean (misjudged cases): 1.74
+  - Mean (correct cases): 1.18
+  - Effect: Higher values increases misjudgement likelihood
+
+Halstead Effort:
+  - Correlation with misjudgement: 0.0662
+  - Mean (misjudged cases): 1297.00
+  - Mean (correct cases): 674.92
+  - Effect: Higher values increases misjudgement likelihood
+
+Halstead Difficulty:
+  - Correlation with misjudgement: 0.1250
+  - Mean (misjudged cases): 4.05
+  - Mean (correct cases): 3.46
+  - Effect: Higher values increases misjudgement likelihood
+
+
+Saving results...
+
+=== SHAP Analysis Complete ===
+Best Test AUC Score: 0.7006
+Mean CV AUC Score: 0.6985
+
+Files saved:
+- misjudgement_dataset_with_shap.csv: Complete dataset
+- shap_and_rf_feature_importance.csv: Combined feature importance
+- shap_analysis_summary.json: Summary report
+- Individual visualization files (7 separate plots for clarity)
+
+=== TOP FEATURES INFLUENCING LLM MISJUDGMENTS (SHAP Analysis) ===
+                           feature  shap_importance  rf_importance
+0                Prompt Perplexity     7.991146e-02   1.414430e-01
+1                   Function Calls     2.097866e-02   5.076290e-02
+2              Pylint Error Issues     1.859809e-02   1.900211e-02
+3         Pylint Convention Issues     1.824744e-02   3.672853e-02
+4       Problem Description Length     1.647136e-02   5.675265e-02
+5             Solution Code Length     1.642456e-02   6.374344e-02
+6                    Halstead Time     1.594474e-02   5.295292e-02
+7            Pylint Warning Issues     1.424129e-02   2.338768e-02
+8                  Halstead Effort     1.268789e-02   4.943006e-02
+9              Halstead Difficulty     1.240815e-02   4.690419e-02
+10                   Halstead Bugs     1.164322e-02   4.754479e-02
+11           Maintainability Index     1.143805e-02   5.499235e-02
+12  Statement Flesch-Kincaid Grade     1.046127e-02   5.578900e-02
+13            Cognitive Complexity     9.510005e-03   3.682234e-02
+14     Statement Gunning Fog Index     9.351295e-03   5.708006e-02
+15                 Halstead Volume     9.186097e-03   4.868962e-02
+16           Logical Lines of Code     7.262349e-03   4.165228e-02
+17                   Lines of Code     6.731688e-03   4.538590e-02
+18           Cyclomatic Complexity     5.027261e-03   2.507367e-02
+19                   Comment Lines     4.973489e-03   1.654073e-02
+20          Pylint Refactor Issues     4.758148e-03   1.325596e-02
+21        Problem Difficulty Level     4.644181e-03   1.601441e-02
+22         Security Severity Types     1.195992e-05   3.116553e-05
+23       Security Confidence Types     7.681907e-06   2.027696e-05
+24           Total Security Issues     1.368892e-20   6.763304e-20
