@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 import json
 import os
+from dotenv import load_dotenv
 import time
 from typing import Dict, List, Any
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 import openai
 from openai import OpenAI
+from pydantic import BaseModel
 import pandas as pd
+import re
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
-
+load_dotenv()
 class AIEvaluator:
     def __init__(self, api_key: str = None, model: str = None, type: str = None):
         """
@@ -30,7 +34,7 @@ class AIEvaluator:
         ) if self.api_key else None
         self.type = type
         
-    def get_llm_answer(self, input_text: str, max_retries: int = 3) -> tuple[str, str]:
+    def get_llm_answer(self, input_text: str, max_retries: int = 3) -> Dict[str, Any]:
         """
         Get answer from LLM for the given input.
         
@@ -39,17 +43,71 @@ class AIEvaluator:
             max_retries: Maximum number of retries on failure
             
         Returns:
-            Tuple of (answer, reason) where answer is A, B, C, etc. and reason is the explanation
+            Dictionary containing the LLM's answer and reason
         """
         if not self.client:
-            return "N/A", "No API key available"  # Return N/A if no API key
-            
+            return {"Answer": "N/A", "Reason": "No API key available"}  # Return N/A if no API key
+
         for attempt in range(max_retries):
             try:
                 if self.type == "easy":
+                    content ="""
+You are an expert code evaluator. You will analyze a programming problem its code solution using a step-by-step reasoning approach.
+
+Carefully analyze the problem and code by following the structured format below.
+### Analysis Structure
+
+STEP 1: Restate the key requirements and constraints of the problem in your own words.
+
+STEP 2: Analyze the given code line by line and explain the intended logic.
+
+STEP 3: Determine whether the code is fully correct or incorrect.
+
+STEP 4 (MANDATORY if the code is incorrect): Provide at least one specific input test case that causes the code to fail.
+
+STEP 5: Explain the root cause of the failure (if applicable).
+
+After completing the analysis, determine the appropriate verdict and label based on your findings.
+
+### Verdict Mapping
+
+* AC = Accepted (solution is correct)
+* CE = Compilation Error (code cannot compile)
+* WA = Wrong Answer (code compiles but produces incorrect results)
+* TLE = Time Limit Exceeded (algorithm exceeds time constraints)
+* RE = Runtime Error (program crashes, accesses invalid memory, divides by zero, etc.)
+
+### Answer Mapping
+
+* A = Correct solution (AC)
+* B = Compilation-related issue (CE)
+* C = Logical or execution issue (WA, TLE, or RE)
+
+### Important Rules
+
+* Do NOT assume hidden constraints beyond those stated.
+* Do NOT say "it might fail" or "it seems incorrect".
+* Your conclusion must be definitive.
+* Determine the verdict and label only after completing the analysis.
+* If you identify a compilation issue in the code, the correct answer should be B. Do not ignore the compilation error and do not prioritize other logical issues that could lead to WA, RE, or TLE.
+
+### Output Format
+
+Return your answer strictly in the following JSON format:
+
+```json
+{
+  "Reason": <Your detailed analysis following the 5-step format>,
+  "Verdict": <One of: AC, CE, WA, TLE, RE>,
+  "Answer": <One of: A, B, C>
+}
+```
+"""
+                elif self.type == "easy_old":
                     content = """You are an expert code evaluator. You will analyze a programming problem, code solution, and initial verdict using a systematic approach.
 
 First provide your answer as a single letter (A, B, or C), then provide a detailed analysis following the structured format below.
+Be careful in assigning the verdicts such as don't mix B with C. If you see the code have compiler issues in the code then just assign B instead of mixing up with wrong answer (label C).
 
 Format your response as: 
 'Answer: [LETTER]
@@ -108,76 +166,72 @@ IMPORTANT RULES:
 - If you cannot produce a concrete failing test case, you must conclude that the code is correct."""
                 else:
                     raise ValueError("Bad type")
+                
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[
                         {"role": "system", "content": content},
                         {"role": "user", "content": input_text}
                     ],
-                    max_tokens=1000,
+                    max_tokens=1500,
                     temperature=0.0
                 )
-                
                 full_response = response.choices[0].message.content.strip()
-                
-                # Parse the response: expect "Answer: X" then "Reason: ..."
-                lines = full_response.split('\n')
-                if not lines:
-                    raise ValueError("Empty response from LLM")
-                
-                # First line should be "Answer: X"
-                first_line = lines[0].strip()
-                if not first_line.startswith('Answer:'):
-                    raise ValueError(f"First line must start with 'Answer:' but got: {first_line}")
-                
-                # Extract answer letter
-                answer_part = first_line.replace('Answer:', '').strip()
-                answer = None
-                for letter in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']:
-                    if letter in answer_part:
-                        answer = letter
-                        break
-                
-                if not answer:
-                    raise ValueError(f"No valid answer letter found in: {first_line}")
-                
-                # Second line should start with "Reason:"
-                if len(lines) < 2:
-                    raise ValueError("Missing reason line after answer")
-                
-                second_line = lines[1].strip()
-                if not second_line.startswith('Reason:'):
-                    raise ValueError(f"Second line must start with 'Reason:' but got: {second_line}")
-                
-                # Extract reason content
-                reason_lines = []
-                
-                # Get reason from second line
-                first_reason_content = second_line.replace('Reason:', '').strip()
-                if first_reason_content:
-                    reason_lines.append(first_reason_content)
-                
-                # Get all subsequent lines as part of reason
-                for i in range(2, len(lines)):
-                    line_content = lines[i].strip()
-                    if line_content:
-                        reason_lines.append(line_content)
-                
-                if not reason_lines:
-                    raise ValueError("No reason content found after 'Reason:' line")
-                
-                reason = '\n'.join(reason_lines)
-                
-                return answer, reason
-                    
+                print(full_response)
+
+                # Remove markdown code fences if present
+                json_text = re.sub(
+                    r"^```(?:json)?\s*|\s*```$",
+                    "",
+                    full_response,
+                    flags=re.MULTILINE
+                ).strip()
+
+                # Parse JSON
+                data = json.loads(json_text)
+
+                # Validate required fields
+                required_fields = ["Reason", "Verdict", "Answer"]
+                for field in required_fields:
+                    if field not in data:
+                        raise ValueError(f"Missing required field: {field}")
+
+                reason = str(data["Reason"]).strip()
+                verdict = str(data["Verdict"]).strip()
+                answer = str(data["Answer"]).strip()
+
+                valid_verdicts = {"AC", "CE", "WA", "TLE", "RE"}
+                valid_answers = {"A", "B", "C"}
+
+                if verdict not in valid_verdicts:
+                    raise ValueError(f"Invalid verdict: {verdict}")
+
+                if answer not in valid_answers:
+                    raise ValueError(f"Invalid answer: {answer}")
+
+                return {
+                    "answer": answer,
+                    "verdict": verdict,
+                    "reason": reason
+                }
+
             except Exception as e:
                 print(f"Error on attempt {attempt + 1}: {e}")
+
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # Exponential backoff
+                    time.sleep(2 ** attempt)
                 else:
-                    return 'C', f"Error after {max_retries} attempts: {str(e)}"  # Default to C on final failure
-        
-        return 'C', "Failed after all retry attempts"
+                    return {
+                        "answer": "C",
+                        "verdict": "WA",
+                        "reason": f"Error after {max_retries} attempts: {str(e)}"
+                    }
+
+        return {
+            "answer": "C",
+            "verdict": "WA",
+            "reason": "Failed after all retry attempts"
+        }
     
     def evaluate_single_item(self, item_with_index: tuple) -> Dict[str, Any]:
         """
@@ -192,12 +246,13 @@ IMPORTANT RULES:
         index, item = item_with_index
         
         input_text = item.get('input', '')
-        llm_answer, llm_reason = self.get_llm_answer(input_text)
+        llm_result = self.get_llm_answer(input_text)
         
         # Create updated item with LLM answer and reasoning
         updated_item = item.copy()
-        updated_item['llm_answer'] = llm_answer
-        updated_item['llm_reason'] = llm_reason
+        updated_item['llm_verdict'] = llm_result.get('verdict')
+        updated_item['llm_answer'] = llm_result.get('answer')
+        updated_item['llm_reason'] = llm_result.get('reason')
         updated_item['_thread_index'] = index  # For tracking completion order
         
         return updated_item
@@ -352,6 +407,58 @@ IMPORTANT RULES:
             row = metrics['confusion_matrix'][i]
             print(f"  {label}: {row[0]:4d} {row[1]:4d} {row[2]:4d}")
 
+def main_for_pure_misjudgement():
+    """Main function to run the evaluation for pure misjudgement cases."""
+    
+    input_file = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation_with_reasoning.xlsx"
+    output_file = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation_with_reasoning.json"
+    pure_misjudgement_ids_file = "pure_misjudgement_ids.txt"
+    sample_size = None
+    
+    # Initialize evaluator
+    evaluator = AIEvaluator(
+        model=os.getenv("MODEL_NAME"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        type="easy"
+    )
+    
+    try:
+        data = pd.read_excel(input_file).to_dict(orient="records")
+
+        with open(pure_misjudgement_ids_file, 'r') as f:
+            target_ids = {int(line.strip()) for line in f}
+
+        data = [item for item in data if item.get("data_id") in target_ids]
+        print(f"Loaded {len(data)} items")
+
+        updated_data= data
+
+        # Calculate metrics
+        print("\nCalculating metrics...")
+        metrics = evaluator.calculate_metrics(updated_data)
+        
+        # Print results
+        evaluator.print_metrics(metrics)
+
+        # Also save metrics separately
+        metrics_file = output_file.replace('.json', '_metrics_pure_misjudgement.json')
+        with open(metrics_file, 'w') as f:
+            # Convert numpy arrays to lists for JSON serialization
+            serializable_metrics = {k: v for k, v in metrics.items() 
+                                   if k not in ['confusion_matrix']}
+            serializable_metrics['confusion_matrix'] = metrics['confusion_matrix']
+            json.dump(serializable_metrics, f, indent=2)
+        
+        print(f"Metrics saved to {metrics_file}")
+        
+    except FileNotFoundError:
+        print(f"Error: Could not find input file '{input_file}'")
+        print("Make sure the file exists in the current directory.")
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON in input file '{input_file}'")
+    except Exception as e:
+        print(f"Error: {e}")
+
 
 def main():
     """Main function to run the evaluation."""
@@ -362,36 +469,56 @@ def main():
     
     # Initialize evaluator
     evaluator = AIEvaluator(
-        model="gpt-4o",
-        api_key="XXX",
+        model=os.getenv("MODEL_NAME"),
+        api_key=os.getenv("OPENAI_API_KEY"),
         type="easy"
     )
     
     try:
-        # Load data
+        # # Load data
         print(f"Loading data from {input_file}...")
         with open(input_file, 'r') as f:
             data = json.load(f)
         
-        # Remove NA evaluated entries
+        # # Remove NA evaluated entries
         data = [item for item in data if item.get('evaluated', 'NA') != 'NA']
 
+        # Run on previous identified misjudgement cases or new cases calculated by the ai_evaluate.py script selected by the user.
+
+        
+        # Total 209 misjudgement cases identified
+        with open("misjudgement_ids.txt", 'r') as f:
+            target_ids = {int(line.strip()) for line in f}
+        
+
+        data = [item for item in data if item.get("data_id") in target_ids]
         print(f"Loaded {len(data)} items")
         
-        # Evaluate dataset
+        # # Evaluate dataset
         updated_data = evaluator.evaluate_dataset(data, sample_size=sample_size)
         
+
+
         # Calculate metrics
         print("\nCalculating metrics...")
         metrics = evaluator.calculate_metrics(updated_data)
         
-        # Print results
+        # # Print results
         evaluator.print_metrics(metrics)
+
+        # save data in excel file
+        df = pd.DataFrame(updated_data)
+        excel_file = output_file.replace('.json', '.xlsx')
+        print(f"\nSaving results to {excel_file}...")
+        df.to_excel(excel_file, index=False)
+
         
         # Save updated data
         print(f"\nSaving results to {output_file}...")
         with open(output_file, 'w') as f:
             json.dump(updated_data, f, indent=2)
+
+       
         
         # Also save metrics separately
         metrics_file = output_file.replace('.json', '_metrics.json')
@@ -415,3 +542,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    main_for_pure_misjudgement()
