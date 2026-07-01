@@ -209,8 +209,8 @@ def main():
     """Main function to run the evaluation."""
     
     # Configuration
-    input_file = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation.json"
-    output_file = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation_gpt-4o.json"
+    input_file = "CodeJudge_Eval_0shot_easy_with_locations_with_evaluation_x.json"
+    output_file = "CodeJudge_Eval_0shot_easy_with_locations_with_evaluation_x_gpt-4o.json"
     sample_size = None
     
     # Initialize evaluator

@@ -84,37 +84,48 @@ def add_locations_to_codejudge_file(input_file: str, output_file: str, url_mappi
 
 def main():
     """Main function to process all CodeJudge files."""
-    base_path = "./"
-    apps_path = os.path.join(base_path, "APPS")
-    
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Add APPS location info to CodeJudge eval files.")
+    parser.add_argument("--apps", required=True, help="Path to the APPS directory")
+    parser.add_argument("--input-dir", default="./", help="Directory containing CodeJudge input JSON files (default: current directory)")
+    parser.add_argument("--output-dir", default=None, help="Directory to write output files (default: same as input-dir)")
+    args = parser.parse_args()
+
+    apps_path = args.apps
+    input_dir = args.input_dir
+    output_dir = args.output_dir if args.output_dir else input_dir
+
+    os.makedirs(output_dir, exist_ok=True)
+
     codejudge_files = [
         "CodeJudge_Eval_0shot_easy.json",
-        "CodeJudge_Eval_0shot_middle.json", 
+        "CodeJudge_Eval_0shot_middle.json",
         "CodeJudge_Eval_0shot_hard.json"
     ]
-    
+
     print("Building URL to location mapping from APPS metadata...")
     url_mapping = build_url_to_location_mapping(apps_path)
-    
+
     if not url_mapping:
         print("ERROR: No URL mappings found! Check APPS directory structure.")
         return
-    
+
     for filename in codejudge_files:
-        input_path = os.path.join(base_path, filename)
-        
+        input_path = os.path.join(input_dir, filename)
+
         if not os.path.exists(input_path):
             print(f"WARNING: File {input_path} not found, skipping...")
             continue
-        
+
         name_part, ext = os.path.splitext(filename)
         output_filename = f"{name_part}_with_locations{ext}"
-        output_path = os.path.join(base_path, output_filename)
-        
+        output_path = os.path.join(output_dir, output_filename)
+
         add_locations_to_codejudge_file(input_path, output_path, url_mapping)
-    
+
     print("\nProcessing complete!")
-    
+
     print(f"\nURL Mapping Statistics:")
     train_locations = sum(1 for loc in url_mapping.values() if 'train' in loc)
     test_locations = sum(1 for loc in url_mapping.values() if 'test' in loc)

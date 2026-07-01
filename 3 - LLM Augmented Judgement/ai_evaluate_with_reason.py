@@ -463,8 +463,8 @@ def main_for_pure_misjudgement():
 def main():
     """Main function to run the evaluation."""
     
-    input_file = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation.json"
-    output_file = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation_with_reasoning.json"
+    input_file = "CodeJudge_Eval_0shot_easy_with_locations_with_evaluation_x.json"
+    output_file = "CodeJudge_Eval_0shot_easy_with_locations_with_evaluation_x_with_reasoning.json"
     sample_size = None
     
     # Initialize evaluator

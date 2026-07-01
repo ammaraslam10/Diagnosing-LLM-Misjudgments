@@ -9,10 +9,6 @@ from openai import OpenAI
 from radon.complexity import cc_rank, cc_visit
 from radon.metrics import h_visit, mi_visit
 
-IN_DIR = Path("extracted_codes")
-OUT_DIR = Path("extracted_codes_fixed")
-LOG_PATH = Path("repair_log.jsonl")
-
 MODEL = "gpt-4o"
 
 
@@ -67,12 +63,26 @@ def safe_write_text(path: Path, text: str) -> None:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Repair Python code files using GPT-4o so radon metrics can run.")
+    parser.add_argument("--input-dir", required=True,
+                        help="Directory containing extracted .py files (extracted_codes/ from previous step)")
+    parser.add_argument("--output-dir", required=True,
+                        help="Directory to write repaired .py files")
+    parser.add_argument("--api-key", required=True, help="OpenAI API key")
+    args = parser.parse_args()
+
+    IN_DIR = Path(args.input_dir) / "extracted_codes"
+    OUT_DIR = Path(args.output_dir) / "extracted_codes_fixed"
+    LOG_PATH = Path(args.output_dir) / "repair_log.jsonl"
+
     if not IN_DIR.exists():
         raise SystemExit(f"Input folder not found: {IN_DIR.resolve()}")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    client = OpenAI(api_key="YOUR_API_KEY_HERE")
+    client = OpenAI(api_key=args.api_key)
 
     total = 0
     repaired = 0

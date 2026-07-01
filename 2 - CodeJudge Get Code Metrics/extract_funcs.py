@@ -57,24 +57,37 @@ def extract_code_from_json(json_file_path, output_dir=None):
         return []
 
 def main():
-    # Path to the small.json file
-    # json_file = "small.json"
-    json_file = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation.json"
-    
-    # Create output directory for individual code files
-    output_directory = "extracted_codes"
-    
-    # Extract codes
-    codes = extract_code_from_json(json_file, output_directory)
-    
-    # Print summary
-    print(f"\nSummary:")
-    print(f"Total code snippets extracted: {len(codes)}")
-    
-    # Optionally print the first few characters of each code
-    for i, code in enumerate(codes[:5]):  # Show first 5 codes
-        print(f"\nCode {i+1} preview (first 200 chars):")
-        print(code[:200] + "..." if len(code) > 200 else code)
+    import argparse
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(description="Extract code fields from CodeJudge eval files.")
+    parser.add_argument("--input-dir", required=True,
+                        help="Directory containing *_with_locations_with_evaluation_x.json files (output from previous step)")
+    parser.add_argument("--output-dir", required=True,
+                        help="Directory to save extracted code files")
+    args = parser.parse_args()
+
+    input_dir = Path(args.input_dir)
+    output_dir = str(Path(args.output_dir) / "extracted_codes")
+    os.makedirs(output_dir, exist_ok=True)
+
+    json_files = sorted(input_dir.glob("*_with_locations_with_evaluation_x.json"))
+
+    if not json_files:
+        print(f"Error: No *_with_locations_with_evaluation_x.json files found in {input_dir}")
+        return
+
+    print(f"Found {len(json_files)} file(s) to process:")
+    for f in json_files:
+        print(f"  {f.name}")
+    print()
+
+    total = 0
+    for json_file in json_files:
+        codes = extract_code_from_json(str(json_file), output_dir)
+        total += len(codes)
+
+    print(f"\nTotal code snippets extracted: {total}")
 
 if __name__ == "__main__":
     main()

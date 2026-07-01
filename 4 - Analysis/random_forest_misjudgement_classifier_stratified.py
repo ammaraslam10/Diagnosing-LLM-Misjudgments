@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 import json
+import re
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
@@ -125,6 +126,114 @@ def load_misjudgement_data(json_file):
     return df
 
 
+def extract_actual_verdict(text):
+    """Parse evaluated string like '201 AC, 69 WA, 0 CE, 8 RE, 0 TLE' into a single verdict."""
+    if pd.isna(text):
+        return None
+
+    matches = re.findall(r'(\d+)\s+(AC|WA|CE|RE|TLE)', str(text))
+
+    # Filter out matches with zero counts
+    matches = [match for match in matches if int(match[0]) > 0]
+
+    if not matches:
+        return None
+
+    # Choose verdict with highest priority (CE > RE > TLE > WA > AC)
+    verdict_priority = {'CE': 5, 'RE': 4, 'TLE': 3, 'WA': 2, 'AC': 1}
+    highest_priority_verdict = max(matches, key=lambda x: verdict_priority[x[1]])
+
+    return highest_priority_verdict[1]
+
+
+def apply_csv_verdicts(json_df, csv_file):
+    """Override misjudgement labels using actual_verdict from the CSV file."""
+    letter_to_verdict = {
+        'A': 'AC', 'B': 'CE', 'C': 'WA', 'D': 'RE',
+        'E': 'TLE', 'F': 'MLE', 'G': 'OLE', 'H': 'PE', 'I': 'UE'
+    }
+
+    csv_df = pd.read_csv(csv_file, encoding='latin-1')
+    csv_df['filename_base'] = (
+        'code_task_' + csv_df['task_id'].astype(str) +
+        '_data_' + csv_df['source'].astype(str)
+    )
+    csv_df['llm_verdict'] = csv_df['llm_answer'].map(letter_to_verdict)
+    csv_df['misjudgement_csv'] = csv_df['actual_verdict'] != csv_df['llm_verdict']
+
+    verdict_lookup = csv_df[['task_id', 'source', 'misjudgement_csv', 'actual_verdict']].drop_duplicates(subset=['task_id', 'source'])
+
+    merged = json_df.merge(verdict_lookup, on=['task_id', 'source'], how='left')
+
+    updated = merged['misjudgement_csv'].notna().sum()
+    print(f"Updated misjudgement for {updated}/{len(merged)} records from CSV verdicts")
+
+    # Verification: show what changed
+    mask = merged['misjudgement_csv'].notna()
+    before = merged.loc[mask, 'misjudgement'].astype(bool)
+    after  = merged.loc[mask, 'misjudgement_csv'].astype(bool)
+    flip_to_true  = ((~before) & after).sum()
+    flip_to_false = (before & (~after)).sum()
+    unchanged_true  = (before & after).sum()
+    unchanged_false = ((~before) & (~after)).sum()
+    print(f"  CSV changes — flipped False→True: {flip_to_true}, True→False: {flip_to_false}")
+    print(f"  CSV unchanged — stayed True: {unchanged_true}, stayed False: {unchanged_false}")
+    print(f"  Expected final True count: {merged['misjudgement'].astype(bool).sum() - unchanged_true - flip_to_false + flip_to_true + unchanged_true}")
+
+    # Override misjudgement where CSV data is available
+    mask = merged['misjudgement_csv'].notna()
+    merged.loc[mask, 'misjudgement'] = merged.loc[mask, 'misjudgement_csv']
+    merged = merged.drop(columns=['misjudgement_csv'])
+
+    # For records not in the CSV, derive actual_verdict from the JSON 'evaluated' field.
+    # The field may be a letter code (A/B/C...) or a count string ("201 AC, 69 WA...").
+    letter_to_verdict_map = {
+        'A': 'AC', 'B': 'CE', 'C': 'WA', 'D': 'RE',
+        'E': 'TLE', 'F': 'MLE', 'G': 'OLE', 'H': 'PE', 'I': 'UE'
+    }
+    if 'actual_verdict' not in merged.columns:
+        merged['actual_verdict'] = None
+    missing_av = merged['actual_verdict'].isna()
+    if missing_av.any():
+        def derive_verdict(val):
+            if pd.isna(val) or val == '':
+                return None
+            s = str(val).strip()
+            # Try direct letter code first (A, B, C...)
+            if s in letter_to_verdict_map:
+                return letter_to_verdict_map[s]
+            # Try parsing "201 AC, 69 WA, 0 CE..." format
+            return extract_actual_verdict(s)
+        derived = merged.loc[missing_av, 'evaluated'].apply(derive_verdict)
+        merged.loc[missing_av, 'actual_verdict'] = derived
+        print(f"  Derived actual_verdict from 'evaluated' for {derived.notna().sum()} additional records")
+
+    print(f"Updated misjudgement distribution: {merged['misjudgement'].value_counts().to_dict()}")
+
+    # Full count table: actual_verdict × llm_verdict for misjudgements only
+    mis_mask = merged['misjudgement'].astype(bool)
+    print(f"\n=== Misjudgements Only: actual_verdict × llm_verdict ({mis_mask.sum()} cases) ===")
+    if 'actual_verdict' in merged.columns:
+        mis_df = merged[mis_mask].copy()
+        mis_df['llm_verdict'] = mis_df['llm_answer'].map(letter_to_verdict)
+        combo = (
+            mis_df.groupby(['actual_verdict', 'llm_verdict'])
+            .size()
+            .reset_index(name='count')
+            .sort_values('count', ascending=False)
+        )
+        pivot = mis_df.groupby(['actual_verdict', 'llm_verdict']).size().unstack(fill_value=0)
+        pivot.index.name = 'actual \ llm'
+        print(pivot.to_string())
+        print(f"\nNon-zero cells: {(pivot > 0).sum().sum()} of {pivot.shape[0] * pivot.shape[1]} possible")
+        print("\nSorted by count (rarest at the bottom):")
+        print(combo.to_string(index=False))
+    else:
+        print("  (actual_verdict not available)")
+
+    return merged
+
+
 def merge_all_data(csv_data, json_df):
     """Merge all CSV metrics with JSON misjudgement data."""
     # Start with the JSON data as base
@@ -155,7 +264,8 @@ def merge_all_data(csv_data, json_df):
             merged_df[col] = merged_df[col].fillna(merged_df[col].median())
     
     # Keep identification columns for detailed analysis
-    identification_columns = ['filename_base', 'task_id', 'source', 'answer', 'llm_answer', 'evaluated', 'data_id']
+    base_id_cols = ['filename_base', 'task_id', 'source', 'answer', 'llm_answer', 'evaluated', 'data_id']
+    identification_columns = [c for c in base_id_cols + ['actual_verdict'] if c in merged_df.columns]
     
     return merged_df, identification_columns
 
@@ -257,11 +367,11 @@ def prepare_features_and_target(df, identification_columns):
     
     # Separate features and identification info
     X = df_renamed[renamed_features]
-    y = df['misjudgement']
-    
+    y = df['misjudgement'].astype(bool).astype(int)
+
     # Keep identification data for later use
     identification_data = df[identification_columns]
-    
+
     print(f"Feature matrix shape: {X.shape}")
     print(f"Target variable shape: {y.shape}")
     print(f"Target distribution: {y.value_counts().to_dict()}")
@@ -271,9 +381,35 @@ def prepare_features_and_target(df, identification_columns):
 
 def train_random_forest_with_shap(X, y, feature_names, identification_data):
     """Train Random Forest classifier and perform SHAP analysis."""
+
+    # Build a fine-grained stratification key: actual_verdict → llm_verdict combo.
+    # Rare combos (too few samples to appear in both train & test) are collapsed
+    # into a fallback bucket so sklearn's stratify doesn't raise an error.
+    letter_to_verdict = {
+        'A': 'AC', 'B': 'CE', 'C': 'WA', 'D': 'RE',
+        'E': 'TLE', 'F': 'MLE', 'G': 'OLE', 'H': 'PE', 'I': 'UE'
+    }
+    id_reset = identification_data.reset_index(drop=True)
+    if 'actual_verdict' in id_reset.columns:
+        llm_verdict = id_reset['llm_answer'].map(letter_to_verdict).fillna('UNK')
+        strat_key = (id_reset['actual_verdict'].fillna('UNK') + '_→_' + llm_verdict).values
+    else:
+        strat_key = y.values  # fallback: binary only
+
+    # Collapse classes with fewer than min_count samples into 'rare'
+    min_count = max(3, int(np.ceil(1 / 0.3)) + 1)  # need ≥1 sample in test set
+    from collections import Counter
+    counts = Counter(strat_key)
+    strat_key = np.array([k if counts[k] >= min_count else f'rare_{int(y.iloc[i])}' 
+                          for i, k in enumerate(strat_key)])
+    unique, cnts = np.unique(strat_key, return_counts=True)
+    print(f"Stratification key — {len(unique)} classes (min count: {min_count}):")
+    for cls, cnt in sorted(zip(unique, cnts), key=lambda x: -x[1]):
+        print(f"  {cls}: {cnt}")
+
     # Split the data while keeping identification info aligned
     X_train, X_test, y_train, y_test, id_train, id_test = train_test_split(
-        X, y, identification_data, test_size=0.2, random_state=42, stratify=y
+        X, y, identification_data, test_size=0.3, random_state=42, stratify=strat_key
     )
     
     print(f"Training set size: {X_train.shape}")
@@ -393,8 +529,83 @@ def train_random_forest_with_shap(X, y, feature_names, identification_data):
         'best_params': grid_search.best_params_,
         'X_test': X_test,
         'y_test': y_test,
-        'y_pred_proba': y_pred_proba
+        'y_pred_proba': y_pred_proba,
+        'id_test': id_test
     }
+
+
+def create_stratified_shap_plots(explainer, X_test, id_test, feature_names, results):
+    """Create SHAP beeswarm plots stratified by judgement category."""
+    print("\nCreating stratified SHAP beeswarm plots...")
+
+    letter_to_verdict = {
+        'A': 'AC', 'B': 'CE', 'C': 'WA', 'D': 'RE',
+        'E': 'TLE', 'F': 'MLE', 'G': 'OLE', 'H': 'PE', 'I': 'UE'
+    }
+
+    X_reset = X_test.reset_index(drop=True)
+    id_reset = id_test.reset_index(drop=True)
+    y_reset = results['y_test'].reset_index(drop=True)
+
+    id_reset['llm_verdict'] = id_reset['llm_answer'].map(letter_to_verdict)
+    has_actual = 'actual_verdict' in id_reset.columns
+
+    # Define categories as (display label, boolean mask, filename suffix)
+    categories = [
+        ('Correct Judgement',   y_reset == 0, 'correct_judgement'),
+        ('All Misjudgements',   y_reset == 1, 'all_misjudgements'),
+    ]
+    if has_actual:
+        av = id_reset['actual_verdict']
+        lv = id_reset['llm_verdict']
+        categories += [
+            ('CE Misjudged as WA', (av == 'CE') & (lv == 'WA'), 'CE_misjudged_as_WA'),
+            ('AC Misjudged as WA', (av == 'AC') & (lv == 'WA'), 'AC_misjudged_as_WA'),
+            ('WA Misjudged as AC', (av == 'WA') & (lv == 'AC'), 'WA_misjudged_as_AC'),
+        ]
+    else:
+        print("  actual_verdict not available — skipping per-error-type plots")
+
+    for label, mask, fname_key in categories:
+        count = int(mask.sum())
+        if count < 5:
+            print(f"  Skipping '{label}' — only {count} samples in test set")
+            continue
+
+        X_sub = X_reset[mask.values]
+        print(f"  '{label}': {count} samples — computing SHAP values...")
+
+        try:
+            sv = explainer.shap_values(X_sub)
+            if isinstance(sv, list) and len(sv) == 2:
+                sv = sv[1]
+            elif hasattr(sv, 'shape') and len(sv.shape) == 3:
+                sv = sv[:, :, 1]
+
+            # Print SHAP value table for this category
+            mean_abs = np.abs(sv).mean(axis=0)
+            mean_signed = sv.mean(axis=0)
+            shap_table = pd.DataFrame({
+                'feature': feature_names,
+                'shap_importance': mean_abs,
+                'mean_shap': mean_signed,
+            }).sort_values('shap_importance', ascending=False)
+            print(f"\n  SHAP values for '{label}':")
+            print(shap_table.to_string(index=False))
+
+            plt.figure(figsize=(12, 8))
+            shap.summary_plot(sv, X_sub, feature_names=feature_names, show=False, max_display=15)
+            plt.title(f'{label}',
+                      fontsize=14, pad=20)
+            plt.xlabel('SHAP Value (impact on model output)', fontsize=12)
+            plt.tight_layout()
+            out_path = f'report/stratified_{fname_key}.png'
+            plt.savefig(out_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"    Saved: {out_path}")
+        except Exception as e:
+            print(f"    Error creating plot for '{label}': {e}")
+            plt.close()
 
 
 def create_shap_visualizations(explainer, shap_values, X_test, feature_names, combined_importance, results):
@@ -737,6 +948,7 @@ def main():
     # Paths
     csv_reports_path = "CSV_Reports"
     json_file_path = "CodeJudge_Eval_0shot_easy_with_locations_with_evaluation_x.json"
+    verdict_csv_path = "CodeJudge_Eval_0shot_easy_with_locations_with_evaluation_x_with_reasoning.csv"
     
     # Load data
     print("Loading CSV metrics data...")
@@ -744,6 +956,9 @@ def main():
     
     print("\nLoading misjudgement data...")
     json_df = load_misjudgement_data(json_file_path)
+
+    print("\nApplying updated verdicts from CSV...")
+    json_df = apply_csv_verdicts(json_df, verdict_csv_path)
     
     print("\nMerging all data sources...")
     merged_df, identification_columns = merge_all_data(csv_data, json_df)
@@ -760,6 +975,9 @@ def main():
     
     print("\nCreating SHAP visualizations...")
     create_shap_visualizations(explainer, shap_values, results['X_test'], feature_names, combined_importance, results)
+
+    print("\nCreating stratified SHAP beeswarm plots...")
+    create_stratified_shap_plots(explainer, results['X_test'], results['id_test'], feature_names, results)
     
     print("\nAnalyzing feature effects...")
     feature_effects = analyze_feature_effects(combined_importance, X, y)

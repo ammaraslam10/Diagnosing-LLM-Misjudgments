@@ -680,7 +680,7 @@ def main():
     print("Logistic Regression Classifier for Misjudgement Prediction\n")
     
     csv_reports_path = "CSV_Reports"
-    json_file_path = "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation.json"
+    json_file_path = "CodeJudge_Eval_0shot_easy_with_locations_with_evaluation_x.json"
     os.makedirs('report', exist_ok=True)
     
     print("Loading CSV metrics data...")

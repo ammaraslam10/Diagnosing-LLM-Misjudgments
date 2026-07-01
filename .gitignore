@@ -56,3 +56,6 @@ Thumbs.db
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+input
+output

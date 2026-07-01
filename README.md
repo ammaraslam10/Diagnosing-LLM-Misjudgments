@@ -177,10 +177,11 @@ python ai_evaluate_with_reason.py
 ```bash
 cd "/workspace/4 - Analysis"
 
-python logistic_regression_misjudgement_classifier.py
 python random_forest_misjudgement_classifier.py
+python random_forest_misjudgement_classifier_stratified.py
 ```
 
+The `random_forest_misjudgement_classifier_stratified.py` is used for RQ3 for stratified results.
 > **Note:** If your Dockerfile uses `WORKDIR /app` instead of `/workspace`, simply replace `/workspace` with `/app` in the commands above.
 
 ---
@@ -192,14 +193,16 @@ Analysis results are written to the `Outputs/` directory.
 Outputs/
 ├── easy/
 ├── middle/
-└── hard/
+├── hard/
+└── RQ3_stratified_shap/
 ```
 
 Each difficulty folder contains:
 
-* `logistic_regression_misjudgement_classifier.txt`
 * `random_forest_misjudgement_classifier.txt`
 * `report/`
+
+RQ3_stratified_shap contains the results for RQ3.
 
 The report directory includes artifacts such as:
 
@@ -229,8 +232,6 @@ Available files include:
 * `CodeJudge_Eval_reasoning_0shot_easy.json`
 
 The first three files contain the CodeJudge-Eval zero-shot dataset augmented with code-level and problem-level features.
-
-The final dataset contains LLM judgements together with the generated reasoning used for RQ4.
 
 ---
 

@@ -1,4 +1,7 @@
 import os
+import sys
+import shutil
+import tempfile
 from radon.complexity import cc_rank, cc_visit
 from radon.metrics import h_visit, mi_visit
 from radon.raw import analyze
@@ -7,18 +10,36 @@ import subprocess
 import pandas as pd
 import re
 import csv
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from io import StringIO
 
-basePath = './'
-folderName = 'extracted_codes'
-reportFolderName = 'CSV_Reports'
+basePath = None
+reportFolderName = None
 reportFileCommonName = ''
+
+
+def has_function_definition(code: str) -> bool:
+    for line in code.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('def ') and '(' in stripped and stripped.endswith(':'):
+            return True
+    return False
+
+
+def wrap_in_function(code: str, filename: str) -> str:
+    func_name = filename.replace('-', '_').replace(' ', '_')
+    func_name = ''.join(c if c.isalnum() or c == '_' else '_' for c in func_name)
+    if func_name and func_name[0].isdigit():
+        func_name = 'func_' + func_name
+    if not func_name:
+        func_name = 'main_func'
+    indented = '\n'.join('    ' + l if l.strip() else '' for l in code.splitlines())
+    return f"def {func_name}():\n{indented}\n    pass\n"
 
 
 def runBandit(folderName):
   completePath = os.path.join(basePath, folderName)
-  reportPath = os.path.join(basePath, reportFolderName)
+  reportPath = reportFolderName
   banditReport = os.path.join(reportPath, reportFileCommonName + 'bandit.csv')
 
   # Ensure the report directory exists
@@ -41,7 +62,7 @@ def runBandit(folderName):
 def runPylint(folderName):
   completePath = os.path.join(basePath, folderName)
   completePath = os.path.join(completePath,'*.py')
-  reportPath = os.path.join(basePath, reportFolderName)
+  reportPath = reportFolderName
   jsonReport = os.path.join(reportPath,reportFileCommonName + 'pylint.json')
   pylintReport = os.path.join(reportPath, reportFileCommonName + 'pylint.csv')
 
@@ -78,20 +99,34 @@ def runPylint(folderName):
 
 def runComplexipy(folderName):
   completePath = os.path.join(basePath, folderName)
-  reportPath = os.path.join(basePath, reportFolderName)
-  txtReport = os.path.join(reportPath,reportFileCommonName + 'complexipy.txt')
-  complexipyReport = os.path.join(reportPath, reportFileCommonName +'complexipy.csv')
+  reportPath = reportFolderName
+  txtReport = os.path.join(reportPath, reportFileCommonName + 'complexipy.txt')
+  complexipyReport = os.path.join(reportPath, reportFileCommonName + 'complexipy.csv')
 
-  command = "complexipy " + completePath + " | tee " + txtReport
+  # Create a temp folder with function-wrapped versions of files that lack defs
+  tmpDir = tempfile.mkdtemp(prefix='complexipy_wrapped_')
+  try:
+      for src in Path(completePath).rglob('*.py'):
+          code = src.read_text(encoding='utf-8', errors='replace')
+          dst = Path(tmpDir) / src.name
+          if has_function_definition(code):
+              dst.write_text(code, encoding='utf-8')
+          else:
+              dst.write_text(wrap_in_function(code, src.stem), encoding='utf-8')
 
-  # Run the command using subprocess with shell=True
-  process = subprocess.run(command, shell=True, stderr=subprocess.PIPE, text=True)
+      command = f'complexipy "{tmpDir}" | tee "{txtReport}"'
 
-  # Check if the process encountered any errors
-  if process.returncode == 0:
-      print("Complexipy Command executed successfully.")
-  else:
-      print(f"An error occurred: {process.stderr}")
+      # Run the command using subprocess with shell=True
+      process = subprocess.run(command, shell=True, stderr=subprocess.PIPE, text=True)
+
+      # Check if the process encountered any errors
+      if process.returncode == 0:
+          print("Complexipy Command executed successfully.")
+      else:
+          print(f"An error occurred: {process.stderr}")
+
+  finally:
+      shutil.rmtree(tmpDir, ignore_errors=True)
 
   # Match any *.py line as a "file line"
   file_re = re.compile(r"^\s*([^\s].*?\.py)\s*$")
@@ -109,7 +144,7 @@ def runComplexipy(folderName):
 
       m_file = file_re.match(line)
       # Skip header/separator lines
-      if m_file and "complexipy" not in line and "─" not in line:
+      if m_file and "─" not in line and "🐙" not in line and "🎉" not in line:
           current_path = m_file.group(1)
           continue
 
@@ -155,7 +190,7 @@ def get_radon_metrics(file_path):
 
 def runRadon(folderName):
   completePath = os.path.join(basePath, folderName)
-  reportPath = os.path.join(basePath, reportFolderName)
+  reportPath = reportFolderName
   radonReport = os.path.join(reportPath, reportFileCommonName +'radon.csv')
   # Prepare the CSV file
   with open(radonReport, 'w', newline='') as csvfile:
@@ -211,7 +246,26 @@ def runRadon(folderName):
   print(f'All Radon metrics have been saved to {radonReport}')
 
 
-runBandit(folderName)
-runPylint(folderName)
-runComplexipy(folderName)
-runRadon(folderName)
+def main():
+    import argparse
+    global basePath, reportFolderName
+
+    parser = argparse.ArgumentParser(description="Run static analysis metrics on extracted code files.")
+    parser.add_argument("--input-dir", required=True,
+                        help="Base directory containing extracted_codes/ and extracted_codes_fixed/ subfolders")
+    parser.add_argument("--output-dir", required=True,
+                        help="Base directory where CSV_Reports/ will be created")
+    args = parser.parse_args()
+
+    basePath = args.input_dir
+    reportFolderName = os.path.join(args.output_dir, 'CSV_Reports')
+    os.makedirs(reportFolderName, exist_ok=True)
+
+    runBandit('extracted_codes')
+    runPylint('extracted_codes')
+    runComplexipy('extracted_codes_fixed')
+    runRadon('extracted_codes_fixed')
+
+
+if __name__ == "__main__":
+    main()

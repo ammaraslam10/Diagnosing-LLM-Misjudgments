@@ -1,0 +1,147 @@
+{
+  "model_performance": {
+    "test_auc": 0.9058518518518519,
+    "mean_cv_auc": 0.883436589121707,
+    "best_params": {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "min_samples_leaf": 1,
+      "min_samples_split": 2,
+      "n_estimators": 200
+    }
+  },
+  "top_shap_features": [
+    {
+      "feature": "Prompt Perplexity",
+      "shap_importance": 0.0926840493407671,
+      "rf_importance": 0.20689239804024065
+    },
+    {
+      "feature": "Function Calls",
+      "shap_importance": 0.08729717466895658,
+      "rf_importance": 0.13879921426650363
+    },
+    {
+      "feature": "Pylint Convention Issues",
+      "shap_importance": 0.06903604936670217,
+      "rf_importance": 0.10259502608713379
+    },
+    {
+      "feature": "Pylint Error Issues",
+      "shap_importance": 0.025087624885393827,
+      "rf_importance": 0.05325463111241298
+    },
+    {
+      "feature": "Pylint Warning Issues",
+      "shap_importance": 0.02007938325488024,
+      "rf_importance": 0.029228524356505248
+    },
+    {
+      "feature": "Solution Code Length",
+      "shap_importance": 0.019904538633945156,
+      "rf_importance": 0.05216433508985838
+    },
+    {
+      "feature": "Problem Description Length",
+      "shap_importance": 0.014535388509292367,
+      "rf_importance": 0.034732114011340326
+    },
+    {
+      "feature": "Maintainability Index",
+      "shap_importance": 0.013055051003743483,
+      "rf_importance": 0.03557190082000866
+    },
+    {
+      "feature": "Statement Gunning Fog Index",
+      "shap_importance": 0.01267867571991161,
+      "rf_importance": 0.032006569809334494
+    },
+    {
+      "feature": "Pylint Refactor Issues",
+      "shap_importance": 0.012129922906415043,
+      "rf_importance": 0.014036195774111027
+    }
+  ],
+  "feature_effects": [
+    {
+      "feature": "Prompt Perplexity",
+      "correlation": 0.20006918498411183,
+      "mean_misjudged": 1.0630073214917137,
+      "mean_correct": 1.0102673562031488,
+      "effect": "increases",
+      "difference": 0.05273996528856495
+    },
+    {
+      "feature": "Function Calls",
+      "correlation": -0.2879365234557075,
+      "mean_misjudged": 4.985436893203883,
+      "mean_correct": 11.25201072386059,
+      "effect": "decreases",
+      "difference": 6.266573830656706
+    },
+    {
+      "feature": "Pylint Convention Issues",
+      "correlation": -0.15910398391610964,
+      "mean_misjudged": 1.1893203883495145,
+      "mean_correct": 3.012064343163539,
+      "effect": "decreases",
+      "difference": 1.8227439548140245
+    },
+    {
+      "feature": "Pylint Error Issues",
+      "correlation": 0.19439926490226342,
+      "mean_misjudged": 0.5728155339805825,
+      "mean_correct": 0.15147453083109919,
+      "effect": "increases",
+      "difference": 0.4213410031494833
+    },
+    {
+      "feature": "Pylint Warning Issues",
+      "correlation": -0.15850637623157965,
+      "mean_misjudged": 0.5242718446601942,
+      "mean_correct": 1.6675603217158177,
+      "effect": "decreases",
+      "difference": 1.1432884770556235
+    },
+    {
+      "feature": "Solution Code Length",
+      "correlation": 0.13631616162138618,
+      "mean_misjudged": 1006.0388349514564,
+      "mean_correct": 610.7245308310992,
+      "effect": "increases",
+      "difference": 395.3143041203572
+    },
+    {
+      "feature": "Problem Description Length",
+      "correlation": -0.03282170771582092,
+      "mean_misjudged": 1580.4466019417475,
+      "mean_correct": 1646.3317694369973,
+      "effect": "decreases",
+      "difference": 65.88516749524979
+    },
+    {
+      "feature": "Maintainability Index",
+      "correlation": -0.08678547457497443,
+      "mean_misjudged": 64.55023990516088,
+      "mean_correct": 68.54862644279228,
+      "effect": "decreases",
+      "difference": 3.9983865376314043
+    },
+    {
+      "feature": "Statement Gunning Fog Index",
+      "correlation": -0.022091525382151537,
+      "mean_misjudged": 10.718781568191462,
+      "mean_correct": 10.843949609847302,
+      "effect": "decreases",
+      "difference": 0.12516804165584006
+    },
+    {
+      "feature": "Pylint Refactor Issues",
+      "correlation": -0.07785278812757193,
+      "mean_misjudged": 0.0970873786407767,
+      "mean_correct": 0.4524128686327078,
+      "effect": "decreases",
+      "difference": 0.3553254899919311
+    }
+  ]
+}

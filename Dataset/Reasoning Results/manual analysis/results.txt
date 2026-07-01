@@ -1,0 +1,45 @@
+=== Predicted Verdict Counts ===
+llm_verdict
+WA    109
+AC     44
+RE      3
+CE      1
+Name: count, dtype: int64
+
+=== Actual Verdict Counts ===
+actual_verdict
+CE     84
+AC     28
+WA     22
+TLE    14
+RE      9
+Name: count, dtype: int64
+
+=== Actual vs Predicted Verdicts ===
+Predicted  AC  CE  RE  WA
+Actual                   
+AC          0   0   1  27
+CE          0   0   2  82
+RE          8   1   0   0
+TLE        14   0   0   0
+WA         22   0   0   0
+
+=== Actual -> Predicted Counts ===
+CE -> WA = 82
+AC -> WA = 27
+WA -> AC = 22
+TLE -> AC = 14
+RE -> AC = 8
+CE -> RE = 2
+AC -> RE = 1
+RE -> CE = 1
+
+=== Misclassifications Only ===
+CE -> WA = 82
+AC -> WA = 27
+WA -> AC = 22
+TLE -> AC = 14
+RE -> AC = 8
+CE -> RE = 2
+AC -> RE = 1
+RE -> CE = 1

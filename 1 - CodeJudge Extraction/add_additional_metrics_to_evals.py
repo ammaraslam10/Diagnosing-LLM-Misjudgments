@@ -8,7 +8,7 @@ import textstat
 import ast
 from collections import Counter
 
-client = OpenAI(api_key="XXX")
+client = None  # Initialised in main() after parsing --api-key
 
 CACHE_FILE = "perplexity_cache.json"
 perplexity_cache = {}
@@ -33,13 +33,12 @@ def save_perplexity_cache():
     """Save perplexity cache to file."""
     try:
         cache_data = {str(k): v for k, v in perplexity_cache.items()}
-        existing_count = 0
-        with open(CACHE_FILE, 'r', encoding='utf-8') as f:
-            existing_data = json.load(f)
-            existing_count = len(existing_data)
-        if len(perplexity_cache) < existing_count:
-            print(f"Warning: Current cache size {len(perplexity_cache)} is smaller than existing cache size {existing_count}. Not overwriting.")
-            return
+        if os.path.exists(CACHE_FILE):
+            with open(CACHE_FILE, 'r', encoding='utf-8') as f:
+                existing_data = json.load(f)
+            if len(perplexity_cache) < len(existing_data):
+                print(f"Warning: Current cache size {len(perplexity_cache)} is smaller than existing cache size {len(existing_data)}. Not overwriting.")
+                return
         with open(CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump(cache_data, f, indent=2, ensure_ascii=False)
         print(f"Saved {len(perplexity_cache)} cached perplexity values to {CACHE_FILE}")
@@ -55,7 +54,7 @@ def gpt4o_prompt_perplexity(text):
     try:
         API_RESPONSE = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "You are an expert code evaluator. Answer only with a single letter: A, B, or C."},
+                {"role": "system", "content": "You are an expert code evaluator. Answer only with a single letter."},
                 {"role": "user", "content": text}
             ],
             model="gpt-4o",
@@ -244,44 +243,63 @@ class APIUsageVisitor(ast.NodeVisitor):
 
 def main():
     """Main function to process all CodeJudge files."""
+    import argparse
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(
+        description="Add difficulty, readability, and perplexity metrics to CodeJudge eval files."
+    )
+    parser.add_argument("--apps", required=True, help="Path to the APPS directory")
+    parser.add_argument("--input-dir", required=True,
+                        help="Directory containing *_with_locations_with_evaluation.json files (output from previous step)")
+    parser.add_argument("--output-dir", default=None,
+                        help="Directory to write output files (default: same as input-dir)")
+    parser.add_argument("--api-key", required=True, help="OpenAI API key")
+    args = parser.parse_args()
+
+    global client, CACHE_FILE
+    client = OpenAI(api_key=args.api_key)
+
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir) if args.output_dir else input_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    CACHE_FILE = str(output_dir / "perplexity_cache.json")
+
     load_perplexity_cache()
-    
-    base_path = "./"
-    apps_path = os.path.join(base_path, "APPS")
-    
-    codejudge_files = [
-        "CodeJudge_Eval_0shot_easy_c_with_locations_with_evaluation.json",
-        "CodeJudge_Eval_0shot_middle_c_with_locations_with_evaluation.json",
-        "CodeJudge_Eval_0shot_hard_with_locations_with_evaluation.json",
-    ]
+
+    json_files = sorted(input_dir.glob("*_with_locations_with_evaluation.json"))
+
+    if not json_files:
+        print(f"Error: No *_with_locations_with_evaluation.json files found in {input_dir}")
+        return
+
+    print(f"Found {len(json_files)} file(s) to process:")
+    for f in json_files:
+        print(f"  {f.name}")
+    print()
 
     print("Building URL to difficulty mapping from APPS metadata...")
-    url_mapping = build_url_to_difficulty_mapping(apps_path)
-    
+    url_mapping = build_url_to_difficulty_mapping(args.apps)
+
     if not url_mapping:
         print("ERROR: No URL mappings found! Check APPS directory structure.")
         return
-    
-    for filename in codejudge_files:
-        input_path = os.path.join(base_path, filename)
-        
-        if not os.path.exists(input_path):
-            print(f"WARNING: File {input_path} not found, skipping...")
-            continue
-        
-        name_part, ext = os.path.splitext(filename)
-        output_filename = f"{name_part}_with_difficulty_and_metrics{ext}"
-        output_path = os.path.join(base_path, output_filename)
-        
-        add_difficulty_to_codejudge_file(input_path, output_path, url_mapping)
-    
+
+    for json_file in json_files:
+        name_part = json_file.stem
+        output_filename = f"{name_part}_x{json_file.suffix}"
+        output_path = str(output_dir / output_filename)
+
+        add_difficulty_to_codejudge_file(str(json_file), output_path, url_mapping)
+
     print("\nProcessing complete!")
-    
+
     print(f"\nURL Mapping Statistics:")
     difficulty_counts = {}
     for difficulty in url_mapping.values():
         difficulty_counts[difficulty] = difficulty_counts.get(difficulty, 0) + 1
-    
+
     for difficulty, count in difficulty_counts.items():
         print(f"  {difficulty}: {count}")
     print(f"  Total mappings: {len(url_mapping)}")

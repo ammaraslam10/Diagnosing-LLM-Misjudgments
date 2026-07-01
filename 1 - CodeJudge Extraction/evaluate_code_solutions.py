@@ -355,20 +355,94 @@ def process_evaluation_data(json_file_path):
     print(f"\nProcessed data saved to: {output_path}")
     return output_path
 
+def detect_difficulty(filename: str):
+    """Return 'easy', 'middle', 'hard', or None based on filename."""
+    name = filename.lower()
+    for difficulty in ('easy', 'middle', 'hard'):
+        if f'_{difficulty}_' in name or f'_{difficulty}.' in name:
+            return difficulty
+    return None
+
+
+def apply_correct_grouping(data: list, difficulty: str) -> list:
+    """
+    Remap 'evaluated' letters to the correct grouping for the given difficulty.
+
+    Easy grouping  — D/E/F/G/H/I → C
+    Middle grouping — F → E; E/G/H/I → F
+    Hard grouping  — no remapping
+    """
+    for entry in data:
+        evaluated = entry.get('evaluated', 'NA')
+
+        if difficulty == 'easy':
+            if evaluated in ('D', 'E', 'F', 'G', 'H', 'I'):
+                entry['evaluated'] = 'C'
+        elif difficulty == 'middle':
+            if evaluated == 'F':
+                entry['evaluated'] = 'E'
+            elif evaluated in ('E', 'G', 'H', 'I'):
+                entry['evaluated'] = 'F'
+        # hard: no remapping
+
+    return data
+
+
 def main():
     """Main function to process the CodeJudge evaluation file."""
-    
-    current_dir = Path.cwd()
-    
-    json_file = current_dir / "CodeJudge_Eval_0shot_hard_with_locations.json"
-    
-    if not json_file.exists():
-        print(f"Error: {json_file} not found in current directory")
-        print(f"Current directory: {current_dir}")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Evaluate code solutions in CodeJudge *_with_locations.json files.")
+    parser.add_argument("--input-dir", required=True, help="Directory containing *_with_locations.json files (output from previous step)")
+    parser.add_argument("--output-dir", default=None, help="Directory to write output files (default: same as input-dir)")
+    args = parser.parse_args()
+
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir) if args.output_dir else input_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    json_files = sorted(input_dir.glob("*_with_locations.json"))
+
+    if not json_files:
+        print(f"Error: No *_with_locations.json files found in {input_dir}")
         return
-    
-    output_path = process_evaluation_data(json_file)
-    print(f"\nSuccess! Output file created: {output_path}")
+
+    print(f"Found {len(json_files)} file(s) to process:")
+    for f in json_files:
+        print(f"  {f.name}")
+    print()
+
+    for json_file in json_files:
+        raw_output_filename = f"{json_file.stem}_with_evaluation{json_file.suffix}"
+        print(f"=== Processing {json_file.name} ===")
+        output_path = Path(process_evaluation_data(json_file))
+
+        # Move raw evaluation output to output_dir if different
+        if output_dir != json_file.parent:
+            dest = output_dir / raw_output_filename
+            output_path.rename(dest)
+            output_path = dest
+            print(f"Moved output to: {output_path}")
+
+        # Apply correct grouping based on difficulty detected from filename
+        difficulty = detect_difficulty(json_file.name)
+        if difficulty is not None:
+            print(f"  Applying correct grouping for difficulty: {difficulty}")
+
+            with open(output_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            data = apply_correct_grouping(data, difficulty)
+
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            print(f"  Corrected grouping saved to: {output_path}")
+        else:
+            print(f"  Could not detect difficulty from filename; skipping grouping step.")
+
+        print()
+
+    print("All files processed.")
 
 if __name__ == "__main__":
     main()
